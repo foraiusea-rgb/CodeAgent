@@ -37,13 +37,14 @@ Each item must have:
 
 Return ONLY a valid JSON array. No markdown fences.`;
 
-function buildCodebasePrompt(files: Record<string, CodeFile>, config: { aggression: string; focus: string[] }): string {
+function buildCodebasePrompt(files: Record<string, CodeFile>, config: { aggression: string; focus: string[]; provider?: string }): string {
   const fileEntries = Object.entries(files);
   if (fileEntries.length === 0) return "No files provided.";
 
   const parts = [`Focus areas: ${config.focus.join(", ")}\nAggression level: ${config.aggression}\n\n`];
   let totalChars = 0;
-  const MAX_CHARS = 80000;
+  // Local LLMs have smaller context windows — limit to ~6K chars (~2K tokens)
+  const MAX_CHARS = config.provider === "local" ? 6000 : 80000;
 
   for (const [path, file] of fileEntries) {
     const chunk = `=== FILE: ${path} ===\n${file.content}\n\n`;
@@ -135,7 +136,7 @@ export async function runAgent(mode: AgentMode) {
       addTimeline({ message: `Pass ${passNum}: ${currentMode}`, type: "system" });
 
       const system = currentMode === "review" ? SYSTEM_REVIEW : SYSTEM_OPTIMIZE;
-      const prompt = buildCodebasePrompt(files, config);
+      const prompt = buildCodebasePrompt(files, { ...config, provider: config.provider });
 
       setAgentStatus(`Calling AI model (${config.model})…`);
       const raw = await callAI(prompt, system, config);

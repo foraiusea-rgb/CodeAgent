@@ -44,7 +44,7 @@ async function callLocal(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: model || "default",
-        max_tokens: 8000,
+        max_tokens: 4096,
         temperature: 0.2,
         messages: allMessages,
       }),
