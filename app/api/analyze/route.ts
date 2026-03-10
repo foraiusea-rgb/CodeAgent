@@ -90,7 +90,7 @@ async function callOpenRouter(
       },
       body: JSON.stringify({
         model: model || "deepseek/deepseek-r1-0528:free",
-        max_tokens: 8000,
+        max_tokens: (model && model.includes(":free")) ? 1500 : 8000,
         temperature: 0.2,
         messages: allMessages,
       }),
