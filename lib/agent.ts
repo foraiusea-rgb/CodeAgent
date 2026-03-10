@@ -41,16 +41,22 @@ function buildCodebasePrompt(files: Record<string, CodeFile>, config: { aggressi
   const fileEntries = Object.entries(files);
   if (fileEntries.length === 0) return "No files provided.";
 
-  const parts = [`Focus areas: ${config.focus.join(", ")}\nAggression level: ${config.aggression}\n\n`];
+  const parts = ["Focus areas: " + config.focus.join(", ") + "\nAggression level: " + config.aggression + "\n\n"];
   let totalChars = 0;
-  // Local LLMs have smaller context windows (8K default) — limit code to ~20K chars (~5K tokens)
-  // leaving room for system prompt (~1K tokens) and response (~2K tokens)
   const MAX_CHARS = config.provider === "local" ? 20000 : 80000;
 
   for (const [path, file] of fileEntries) {
-    const chunk = `=== FILE: ${path} ===\n${file.content}\n\n`;
+    const header = "=== FILE: " + path + " ===\n";
+    const chunk = header + file.content + "\n\n";
     if (totalChars + chunk.length > MAX_CHARS) {
-      parts.push(`[${path} truncated — too large]\n\n`);
+      const remaining = MAX_CHARS - totalChars;
+      if (remaining > 300) {
+        const truncContent = file.content.slice(0, remaining - 100);
+        parts.push(header + truncContent + "\n[... rest truncated to fit context]\n\n");
+        totalChars = MAX_CHARS;
+      } else {
+        parts.push("[" + path + " skipped]\n\n");
+      }
     } else {
       parts.push(chunk);
       totalChars += chunk.length;
@@ -59,6 +65,7 @@ function buildCodebasePrompt(files: Record<string, CodeFile>, config: { aggressi
 
   return parts.join("");
 }
+
 
 function extractJSON(text: string): unknown[] {
   // Try direct parse
