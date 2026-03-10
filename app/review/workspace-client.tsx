@@ -202,7 +202,8 @@ function FindingCard({ finding }: { finding: Finding }) {
 export default function WorkspaceClient() {
   const store = useStore();
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
-const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const toastTimer = useRef<NodeJS.Timeout>();
+
   // Load API key from session
   useEffect(() => {
     const key = sessionStorage.getItem("ca_api_key");
