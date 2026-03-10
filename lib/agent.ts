@@ -1,4 +1,4 @@
-import { useStore, type AgentMode, type Finding, type CodeFile } from "./store";
+import { useStore, type AgentMode, type Finding, type CodeFile, type TokenUsage } from "./store";
 
 const SYSTEM_REVIEW = `You are an expert code reviewer. Analyze the provided codebase and return a JSON array of findings.
 
@@ -95,7 +95,11 @@ function extractJSON(text: string): unknown[] {
   return [];
 }
 
-async function callAI(userPrompt: string, systemPrompt: string, config: ReturnType<typeof useStore.getState>["config"]): Promise<string> {
+async function callAI(
+  userPrompt: string,
+  systemPrompt: string,
+  config: ReturnType<typeof useStore.getState>["config"]
+): Promise<{ content: string; usage: TokenUsage }> {
   const response = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -114,43 +118,74 @@ async function callAI(userPrompt: string, systemPrompt: string, config: ReturnTy
   }
 
   const data = await response.json();
-  return data.content || "";
+  return {
+    content: data.content || "",
+    usage: {
+      promptTokens: data.usage?.prompt_tokens ?? 0,
+      completionTokens: data.usage?.completion_tokens ?? 0,
+      totalTokens: data.usage?.total_tokens ?? 0,
+    },
+  };
 }
 
 export async function runAgent(mode: AgentMode) {
   const store = useStore.getState();
-  const { files, config, setAgentRunning, setAgentStatus, setProgress, addFindings, addTimeline, clearFindings } = store;
+  const {
+    files, config, setAgentRunning, setAgentStatus, setProgress,
+    addFindings, addTimeline, clearFindings,
+    resetTokenUsage, addTokenUsage, setAgentStep, setElapsedTime,
+  } = store;
 
   if (Object.keys(files).length === 0) {
     throw new Error("No files uploaded. Drop some code files first.");
   }
   if (config.provider !== "local" && !config.apiKey.trim()) {
-    throw new Error("No API key. Add one in Config ⚙️");
+    throw new Error("No API key. Add one in Config.");
   }
 
   setAgentRunning(true, mode);
   clearFindings();
+  resetTokenUsage();
+  setElapsedTime(0);
+  setAgentStep("initializing", 0);
   addTimeline({ message: `Agent started: ${mode} mode`, type: "system" });
 
   const modes: AgentMode[] = mode === "pipeline" ? ["review", "optimize"] : [mode];
   const totalPasses = modes.length;
+  const startTime = Date.now();
+
+  // Elapsed time tracker
+  const timerInterval = setInterval(() => {
+    useStore.getState().setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+  }, 1000);
 
   try {
     for (let i = 0; i < modes.length; i++) {
       const currentMode = modes[i];
       const passNum = i + 1;
       setProgress(passNum, totalPasses);
-      setAgentStatus(`Pass ${passNum}/${totalPasses}: Running ${currentMode} analysis…`);
+
+      // Sub-step 1: Building prompt
+      setAgentStep("Building code prompt...", 10);
+      setAgentStatus(`Pass ${passNum}/${totalPasses}: Preparing ${currentMode} analysis...`);
       addTimeline({ message: `Pass ${passNum}: ${currentMode}`, type: "system" });
 
       const system = currentMode === "review" ? SYSTEM_REVIEW : SYSTEM_OPTIMIZE;
       const prompt = buildCodebasePrompt(files, { ...config, provider: config.provider });
 
-      setAgentStatus(`Calling AI model (${config.model})…`);
-      const raw = await callAI(prompt, system, config);
+      // Sub-step 2: Calling AI
+      setAgentStep("Sending to AI model...", 30);
+      setAgentStatus(`Pass ${passNum}/${totalPasses}: Calling ${config.model || "AI"}...`);
 
-      setAgentStatus("Parsing findings…");
-      const parsed = extractJSON(raw);
+      const result = await callAI(prompt, system, config);
+
+      // Sub-step 3: Token usage received
+      addTokenUsage(result.usage);
+      setAgentStep("Parsing response...", 75);
+      setAgentStatus(`Pass ${passNum}/${totalPasses}: Parsing findings...`);
+
+      // Sub-step 4: Parse findings
+      const parsed = extractJSON(result.content);
 
       const findings: Finding[] = parsed
         .filter((f): f is Record<string, unknown> => typeof f === "object" && f !== null)
@@ -176,19 +211,26 @@ export async function runAgent(mode: AgentMode) {
         findings.forEach((f) => { if (f.severity === "info") f.status = "approved"; });
       }
 
+      // Sub-step 5: Adding findings
+      setAgentStep("Adding findings...", 90);
       addFindings(findings);
       addTimeline({ message: `Found ${findings.length} issues`, type: "system" });
+
+      setAgentStep("Pass complete", 100);
       setAgentStatus(`Pass ${passNum} complete — ${findings.length} findings`);
     }
 
+    setAgentStep("Analysis complete", 100);
     setAgentStatus("Analysis complete");
     addTimeline({ message: "Agent finished successfully", type: "system" });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    setAgentStep("Error", 0);
     setAgentStatus(`Error: ${msg}`);
     addTimeline({ message: `Error: ${msg}`, type: "error" });
     throw err;
   } finally {
+    clearInterval(timerInterval);
     setAgentRunning(false, null);
   }
 }

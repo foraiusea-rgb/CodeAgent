@@ -119,8 +119,17 @@ pre, code {
 .toast-exit { animation: toastOut 0.2s ease-in forwards; }
 
 /* Shimmer loading */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
 .shimmer {
   background: linear-gradient(90deg, #141422 0%, #1e1e32 50%, #141422 100%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
 }

@@ -6,7 +6,7 @@ import { useDropzone } from "react-dropzone";
 import {
   Zap, Files, Bot, Clock, Settings, Play, Square, Download, Monitor, RefreshCw, Wifi, WifiOff,
   ChevronRight, Check, X, AlertTriangle, Info, AlertCircle,
-  Upload, Eye, Code, GitBranch, Link, Sparkles, Search, Rocket,
+  Upload, Eye, Code, GitBranch, Link, Sparkles, Search, Rocket, Activity, ArrowUp, ArrowDown, Timer,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { runAgent } from "@/lib/agent";
@@ -38,6 +38,19 @@ function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)}K`;
   return `${(bytes / 1048576).toFixed(1)}M`;
+}
+
+function fmtElapsed(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s}s`;
+}
+
+function fmtTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1000000) return `${(n / 1000).toFixed(1)}K`;
+  return `${(n / 1000000).toFixed(2)}M`;
 }
 
 const SEV_CONFIG = {
@@ -229,6 +242,7 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
   const [localMessage, setLocalMessage] = useState("");
   const [ghUrl, setGhUrl] = useState("");
   const [ghLoading, setGhLoading] = useState(false);
+  const [showTokenDialog, setShowTokenDialog] = useState(false);
 
   // Load API key from session
   useEffect(() => {
@@ -424,7 +438,101 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
         {store.agentRunning && (
           <div className="flex items-center gap-2 text-xs text-azure bg-azure/8 border border-azure/20 px-3 py-1.5 rounded-full">
             <div className="w-1.5 h-1.5 rounded-full bg-azure animate-pulse" />
-            <span className="max-w-[200px] truncate">{store.statusMessage || "Running…"}</span>
+            <span className="max-w-[200px] truncate">{store.statusMessage || "Running..."}</span>
+            {store.elapsedTime > 0 && (
+              <span className="text-dim font-mono">{fmtElapsed(store.elapsedTime)}</span>
+            )}
+          </div>
+        )}
+
+        {/* Token Usage Button */}
+        {(store.agentRunning || store.tokenUsage.totalTokens > 0) && (
+          <div className="relative">
+            <button
+              onClick={() => setShowTokenDialog(!showTokenDialog)}
+              className="flex items-center gap-1.5 text-xs text-violet bg-violet/8 border border-violet/20 px-2.5 py-1.5 rounded-full hover:bg-violet/15 transition-colors"
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span className="font-mono">{fmtTokens(store.tokenUsage.totalTokens)}</span>
+            </button>
+
+            {/* Token Usage Dialog */}
+            <AnimatePresence>
+              {showTokenDialog && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.95 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-border bg-card shadow-2xl shadow-black/50 z-50 overflow-hidden"
+                >
+                  <div className="px-4 py-3 border-b border-border bg-surface/50">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-700 text-dim uppercase tracking-widest">Token Usage</p>
+                      <button onClick={() => setShowTokenDialog(false)} className="p-0.5 rounded hover:bg-muted text-dim hover:text-ghost transition-colors">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    {/* Prompt Tokens */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-azure/10 flex items-center justify-center">
+                          <ArrowUp className="w-3 h-3 text-azure" />
+                        </div>
+                        <span className="text-xs text-ghost">Prompt (sent)</span>
+                      </div>
+                      <span className="text-sm font-mono font-600 text-text">{fmtTokens(store.tokenUsage.promptTokens)}</span>
+                    </div>
+                    {/* Completion Tokens */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-emerald/10 flex items-center justify-center">
+                          <ArrowDown className="w-3 h-3 text-emerald" />
+                        </div>
+                        <span className="text-xs text-ghost">Completion (received)</span>
+                      </div>
+                      <span className="text-sm font-mono font-600 text-text">{fmtTokens(store.tokenUsage.completionTokens)}</span>
+                    </div>
+                    {/* Divider */}
+                    <div className="h-px bg-border" />
+                    {/* Total */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-violet/10 flex items-center justify-center">
+                          <Activity className="w-3 h-3 text-violet" />
+                        </div>
+                        <span className="text-xs font-600 text-ghost">Total used</span>
+                      </div>
+                      <span className="text-sm font-mono font-700 text-violet">{fmtTokens(store.tokenUsage.totalTokens)}</span>
+                    </div>
+                    {/* Elapsed time */}
+                    {store.elapsedTime > 0 && (
+                      <>
+                        <div className="h-px bg-border" />
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-md bg-amber/10 flex items-center justify-center">
+                              <Timer className="w-3 h-3 text-amber" />
+                            </div>
+                            <span className="text-xs text-ghost">Elapsed time</span>
+                          </div>
+                          <span className="text-sm font-mono font-600 text-text">{fmtElapsed(store.elapsedTime)}</span>
+                        </div>
+                      </>
+                    )}
+                    {/* Provider info */}
+                    <div className="mt-1 pt-2 border-t border-border">
+                      <p className="text-[10px] text-dim">
+                        Provider: <span className="text-ghost capitalize">{store.config.provider}</span>
+                        {store.config.model && <> &middot; {store.config.model.split("/").pop()}</>}
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
 
@@ -506,20 +614,45 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
             </div>
           </div>
 
-          {/* Progress */}
+          {/* Enhanced Progress */}
           {store.agentRunning && store.totalPasses > 0 && (
-            <div className="px-3 py-2">
-              <div className="flex justify-between text-[10px] text-dim mb-1">
-                <span>Pass {store.currentPass}/{store.totalPasses}</span>
-                <span>{Math.round((store.currentPass / store.totalPasses) * 100)}%</span>
+            <div className="px-3 py-2 space-y-2">
+              {/* Pass indicator */}
+              <div className="flex justify-between text-[10px] text-dim">
+                <span className="font-600">Pass {store.currentPass}/{store.totalPasses}</span>
+                <span className="font-mono">{fmtElapsed(store.elapsedTime)}</span>
               </div>
-              <div className="h-1 bg-muted rounded-full overflow-hidden">
+
+              {/* Overall progress bar */}
+              <div className="h-1.5 bg-muted rounded-full overflow-hidden relative">
                 <motion.div
                   className="h-full bg-gradient-azure rounded-full"
-                  animate={{ width: `${(store.currentPass / store.totalPasses) * 100}%` }}
-                  transition={{ duration: 0.4 }}
+                  animate={{ width: `${Math.max(5, store.agentStepProgress)}%` }}
+                  transition={{ duration: 0.6, ease: "easeOut" }}
                 />
+                {/* Shimmer overlay while waiting */}
+                {store.agentStep.includes("Sending") && (
+                  <div className="absolute inset-0 overflow-hidden rounded-full">
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-shimmer" />
+                  </div>
+                )}
               </div>
+
+              {/* Sub-step label */}
+              {store.agentStep && (
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1 h-1 rounded-full bg-azure animate-pulse flex-shrink-0" />
+                  <span className="text-[10px] text-ghost truncate">{store.agentStep}</span>
+                </div>
+              )}
+
+              {/* Token counter (live) */}
+              {store.tokenUsage.totalTokens > 0 && (
+                <div className="flex items-center gap-1.5 text-[10px] text-dim">
+                  <Activity className="w-3 h-3 text-violet/60" />
+                  <span className="font-mono">{fmtTokens(store.tokenUsage.totalTokens)} tokens</span>
+                </div>
+              )}
             </div>
           )}
 

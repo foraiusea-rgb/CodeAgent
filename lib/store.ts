@@ -37,6 +37,12 @@ export interface TimelineEntry {
   timestamp: string;
 }
 
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 export interface Config {
   apiKey: string;
   provider: Provider;
@@ -70,6 +76,18 @@ interface AppState {
   setAgentRunning: (v: boolean, mode?: AgentMode | null) => void;
   setAgentStatus: (msg: string) => void;
   setProgress: (current: number, total: number) => void;
+
+  // Token usage (cumulative across passes)
+  tokenUsage: TokenUsage;
+  addTokenUsage: (usage: TokenUsage) => void;
+  resetTokenUsage: () => void;
+
+  // Sub-step progress for live progress bar
+  agentStep: string;
+  agentStepProgress: number;
+  setAgentStep: (step: string, progress: number) => void;
+  elapsedTime: number;
+  setElapsedTime: (t: number) => void;
 
   // Stats
   stats: { approved: number; rejected: number; pending: number };
@@ -156,6 +174,23 @@ export const useStore = create<AppState>((set, get) => ({
   setAgentStatus: (msg) => set({ statusMessage: msg }),
   setProgress: (current, total) => set({ currentPass: current, totalPasses: total }),
 
+  tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+  addTokenUsage: (usage) =>
+    set((s) => ({
+      tokenUsage: {
+        promptTokens: s.tokenUsage.promptTokens + usage.promptTokens,
+        completionTokens: s.tokenUsage.completionTokens + usage.completionTokens,
+        totalTokens: s.tokenUsage.totalTokens + usage.totalTokens,
+      },
+    })),
+  resetTokenUsage: () => set({ tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } }),
+
+  agentStep: "",
+  agentStepProgress: 0,
+  setAgentStep: (step, progress) => set({ agentStep: step, agentStepProgress: progress }),
+  elapsedTime: 0,
+  setElapsedTime: (t) => set({ elapsedTime: t }),
+
   stats: { approved: 0, rejected: 0, pending: 0 },
   recomputeStats: () => {
     const all = Object.values(get().findings);
@@ -184,7 +219,7 @@ export const useStore = create<AppState>((set, get) => ({
   config: {
     apiKey: "",
     provider: "openrouter",
-    model: "deepseek/deepseek-r1-0528:free",
+    model: "qwen/qwen3-coder:free",
     aggression: "balanced",
     autoApproveInfo: false,
     focus: ["bugs", "security", "performance", "quality"],

@@ -2,26 +2,38 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 60;
 
+interface AIResult {
+  content: string;
+  usage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { messages, system, apiKey, provider, model } = await req.json();
 
-    let content = "";
+    let result: AIResult;
     if (provider === "local") {
-      content = await callLocal(messages, system, model);
+      result = await callLocal(messages, system, model);
     } else if (provider === "gemini") {
       if (!apiKey?.trim()) {
         return NextResponse.json({ error: "No API key provided" }, { status: 400 });
       }
-      content = await callGemini(messages, system, apiKey, model);
+      result = await callGemini(messages, system, apiKey, model);
     } else {
       if (!apiKey?.trim()) {
         return NextResponse.json({ error: "No API key provided" }, { status: 400 });
       }
-      content = await callOpenRouter(messages, system, apiKey, model);
+      result = await callOpenRouter(messages, system, apiKey, model);
     }
 
-    return NextResponse.json({ content });
+    return NextResponse.json({
+      content: result.content,
+      usage: result.usage,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });
@@ -32,7 +44,7 @@ async function callLocal(
   messages: { role: string; content: string }[],
   system: string,
   model: string
-): Promise<string> {
+): Promise<AIResult> {
   const baseUrl = "http://localhost:1234";
   const allMessages = system
     ? [{ role: "system", content: system }, ...messages]
@@ -57,7 +69,14 @@ async function callLocal(
 
     const data = await resp.json();
     if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-    return data.choices?.[0]?.message?.content ?? "";
+    return {
+      content: data.choices?.[0]?.message?.content ?? "",
+      usage: {
+        prompt_tokens: data.usage?.prompt_tokens ?? 0,
+        completion_tokens: data.usage?.completion_tokens ?? 0,
+        total_tokens: data.usage?.total_tokens ?? 0,
+      },
+    };
   } catch (err) {
     if (err instanceof TypeError && (err.message.includes("fetch") || err.message.includes("ECONNREFUSED"))) {
       throw new Error(
@@ -74,41 +93,79 @@ async function callOpenRouter(
   system: string,
   apiKey: string,
   model: string
-): Promise<string> {
+): Promise<AIResult> {
   const allMessages = system
     ? [{ role: "system", content: system }, ...messages]
     : messages;
 
   for (let attempt = 0; attempt < 4; attempt++) {
-    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://codeagent.vercel.app",
-        "X-Title": "CodeAgent",
-      },
-      body: JSON.stringify({
-        model: model || "openrouter/free",
-        max_tokens: (model && model.includes(":free")) ? 4000 : 8000,
-        temperature: 0.2,
-        messages: allMessages,
-      }),
-    });
+    try {
+      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://codeagent.vercel.app",
+          "X-Title": "CodeAgent",
+        },
+        body: JSON.stringify({
+          model: model || "qwen/qwen3-coder:free",
+          max_tokens: (model && model.includes(":free")) ? 4000 : 8000,
+          temperature: 0.2,
+          messages: allMessages,
+        }),
+        signal: AbortSignal.timeout(55000),
+      });
 
-    if (resp.status === 429) {
-      await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 10000));
-      continue;
+      if (resp.status === 429) {
+        await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 10000));
+        continue;
+      }
+      if (resp.status === 404) {
+        const text = await resp.text();
+        throw new Error(
+          `Model "${model}" not found on OpenRouter. It may have been removed or renamed. ` +
+          `Try switching to a different model in Config. Details: ${text.slice(0, 200)}`
+        );
+      }
+      if (resp.status === 502 || resp.status === 503 || resp.status === 504) {
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 5000));
+          continue;
+        }
+        throw new Error(
+          `OpenRouter server error (${resp.status}). The model may be overloaded. ` +
+          `Try again in a few moments or switch to a different model.`
+        );
+      }
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`OpenRouter ${resp.status}: ${text.slice(0, 300)}`);
+      }
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+      return {
+        content: data.choices?.[0]?.message?.content ?? "",
+        usage: {
+          prompt_tokens: data.usage?.prompt_tokens ?? 0,
+          completion_tokens: data.usage?.completion_tokens ?? 0,
+          total_tokens: data.usage?.total_tokens ?? 0,
+        },
+      };
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "TimeoutError") {
+        if (attempt < 3) {
+          continue;
+        }
+        throw new Error(
+          "OpenRouter request timed out after multiple attempts. The model may be slow or overloaded. " +
+          "Try a smaller/faster model like Qwen3 4B or Gemma 3 4B."
+        );
+      }
+      throw err;
     }
-    if (!resp.ok) {
-      const text = await resp.text();
-      throw new Error(`OpenRouter ${resp.status}: ${text.slice(0, 300)}`);
-    }
-    const data = await resp.json();
-    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-    return data.choices?.[0]?.message?.content ?? "";
   }
-  throw new Error("Rate limited after retries. Please wait.");
+  throw new Error("Rate limited after retries. Please wait a moment and try again.");
 }
 
 async function callGemini(
@@ -116,7 +173,7 @@ async function callGemini(
   system: string,
   apiKey: string,
   model: string
-): Promise<string> {
+): Promise<AIResult> {
   const geminiModel = model || "gemini-2.0-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
 
@@ -152,7 +209,14 @@ async function callGemini(
     const data = await resp.json();
     const parts = data.candidates?.[0]?.content?.parts;
     if (!parts?.length) throw new Error("Gemini returned empty response");
-    return parts[0].text ?? "";
+    return {
+      content: parts[0].text ?? "",
+      usage: {
+        prompt_tokens: data.usageMetadata?.promptTokenCount ?? 0,
+        completion_tokens: data.usageMetadata?.candidatesTokenCount ?? 0,
+        total_tokens: data.usageMetadata?.totalTokenCount ?? 0,
+      },
+    };
   }
   throw new Error("Gemini rate limited. Try gemini-1.5-pro or OpenRouter.");
 }
