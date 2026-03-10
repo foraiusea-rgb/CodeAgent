@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useDropzone } from "react-dropzone";
 import {
-  Zap, Files, Bot, Clock, Settings, Play, Square, Download,
+  Zap, Files, Bot, Clock, Settings, Play, Square, Download, Monitor, RefreshCw, Wifi, WifiOff,
   ChevronRight, Check, X, AlertTriangle, Info, AlertCircle,
   Upload, Eye, Code, GitBranch, Sparkles, Search, Rocket,
 } from "lucide-react";
@@ -64,6 +64,12 @@ const GEM_MODELS = [
   ["gemini-2.0-flash", "Gemini 2.0 Flash"],
   ["gemini-1.5-pro", "Gemini 1.5 Pro"],
 ];
+// Local LLM state interface
+interface LocalModel {
+  id: string;
+  object: string;
+  owned_by: string;
+}
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
@@ -203,12 +209,19 @@ export default function WorkspaceClient() {
   const store = useStore();
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
   const toastTimer = useRef<NodeJS.Timeout | null>(null);
+const [localModels, setLocalModels] = useState<LocalModel[]>([]);
+  const [localStatus, setLocalStatus] = useState<"idle" | "scanning" | "connected" | "offline">("idle");
+  const [localMessage, setLocalMessage] = useState("");
 
   // Load API key from session
   useEffect(() => {
     const key = sessionStorage.getItem("ca_api_key");
-    const prov = sessionStorage.getItem("ca_provider") as "openrouter" | "gemini" | null;
-    if (key) store.setConfig({ apiKey: key, provider: prov || "openrouter" });
+    const prov = sessionStorage.getItem("ca_provider") as "openrouter" | "gemini" | "local" | null;
+    if (prov === "local") {
+      store.setConfig({ provider: "local", apiKey: "", model: "" });
+    } else if (key) {
+      store.setConfig({ apiKey: key, provider: prov || "openrouter" });
+    }
   }, []);
 
   const showToast = useCallback((msg: string, type: "ok" | "err" = "ok") => {
@@ -217,6 +230,33 @@ export default function WorkspaceClient() {
     toastTimer.current = setTimeout(() => setToast(null), 4000);
   }, []);
 
+// Scan for local LLM models
+  const scanLocalModels = useCallback(async () => {
+    setLocalStatus("scanning");
+    setLocalMessage("Scanning for local models...");
+    try {
+      const resp = await fetch("/api/local-models");
+      const data = await resp.json();
+      setLocalModels(data.models || []);
+      setLocalStatus(data.status === "connected" ? "connected" : "offline");
+      setLocalMessage(data.message || "");
+      if (data.status === "connected" && data.models.length > 0) {
+        store.setConfig({ model: data.models[0].id });
+        showToast(`Found ${data.models.length} local model(s)`, "ok");
+      }
+    } catch {
+      setLocalStatus("offline");
+      setLocalMessage("Failed to connect. Is LM Studio running?");
+    }
+  }, [store, showToast]);
+
+
+  // Auto-scan when switching to local provider
+  useEffect(() => {
+    if (store.config.provider === "local" && localStatus === "idle") {
+      scanLocalModels();
+    }
+  }, [store.config.provider, localStatus, scanLocalModels]);
   // File drop
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const readers = acceptedFiles.map(
@@ -632,40 +672,121 @@ export default function WorkspaceClient() {
                       <label className="block text-xs text-ghost mb-1.5">Provider</label>
                       <select
                         value={store.config.provider}
-                        onChange={e => store.setConfig({ provider: e.target.value as "openrouter" | "gemini", model: e.target.value === "gemini" ? GEM_MODELS[0][0] : OR_MODELS[0][0] })}
+                        onChange={e => {
+                          const val = e.target.value as "openrouter" | "gemini" | "local";
+                          if (val === "local") {
+                            store.setConfig({ provider: "local" as any, model: "", apiKey: "" });
+                            setLocalStatus("idle");
+                          } else {
+                            store.setConfig({ provider: val, model: val === "gemini" ? GEM_MODELS[0][0] : OR_MODELS[0][0] });
+                          }
+                        }}
                         className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-azure/50"
                       >
                         <option value="openrouter">OpenRouter</option>
                         <option value="gemini">Google AI Studio</option>
+                        <option value="local">Local LLM (LM Studio)</option>
                       </select>
                     </div>
-                    <div>
-                      <label className="block text-xs text-ghost mb-1.5">API Key</label>
-                      <input
-                        type="password"
-                        value={store.config.apiKey}
-                        onChange={e => store.setConfig({ apiKey: e.target.value })}
-                        placeholder={store.config.provider === "openrouter" ? "sk-or-v1-..." : "AIza..."}
-                        className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm font-mono text-text placeholder:text-dim outline-none focus:border-azure/50"
-                      />
-                      <p className="text-[10px] text-dim mt-1">
-                        {store.config.provider === "openrouter"
-                          ? "openrouter.ai/keys — free account includes ⭐ models"
-                          : "aistudio.google.com/apikey"}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-ghost mb-1.5">Model</label>
-                      <select
-                        value={store.config.model}
-                        onChange={e => store.setConfig({ model: e.target.value })}
-                        className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-azure/50"
-                      >
-                        {(store.config.provider === "gemini" ? GEM_MODELS : OR_MODELS).map(([v, l]) => (
-                          <option key={v} value={v}>{l}</option>
-                        ))}
-                      </select>
-                    </div>
+
+                    {store.config.provider === "local" ? (
+                      <div className="space-y-3">
+                        {/* Status Panel */}
+                        <div className="rounded-lg border border-violet-500/25 bg-violet-500/5 p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Monitor className="w-4 h-4 text-violet-400" />
+                              <span className="text-xs font-600 text-violet-300">LM Studio</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-500 ${
+                                localStatus === "connected" ? "bg-emerald/15 text-emerald" :
+                                localStatus === "scanning" ? "bg-amber/15 text-amber" :
+                                localStatus === "offline" ? "bg-rose/15 text-rose" :
+                                "bg-dim/15 text-dim"
+                              }`}>
+                                {localStatus === "connected" && <Wifi className="w-3 h-3 inline mr-1" />}
+                                {localStatus === "offline" && <WifiOff className="w-3 h-3 inline mr-1" />}
+                                {localStatus === "connected" ? "Connected" :
+                                 localStatus === "scanning" ? "Scanning..." :
+                                 localStatus === "offline" ? "Offline" : "Not scanned"}
+                              </span>
+                              <button
+                                onClick={scanLocalModels}
+                                disabled={localStatus === "scanning"}
+                                className={`p-1 rounded-md hover:bg-violet-500/20 transition-colors ${localStatus === "scanning" ? "animate-spin" : ""}`}
+                              >
+                                <RefreshCw className="w-3.5 h-3.5 text-violet-400" />
+                              </button>
+                            </div>
+                          </div>
+                          {localMessage && (
+                            <p className="text-[10px] text-dim mt-1">{localMessage}</p>
+                          )}
+                        </div>
+
+                        {/* Model select for local models */}
+                        {localModels.length > 0 && (
+                          <div>
+                            <label className="block text-xs text-ghost mb-1.5">Model</label>
+                            <select
+                              value={store.config.model}
+                              onChange={e => store.setConfig({ model: e.target.value })}
+                              className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-violet-500/50"
+                            >
+                              {localModels.map(m => (
+                                <option key={m.id} value={m.id}>{m.id}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {/* Setup Guide */}
+                        <div className="rounded-lg border border-border bg-surface/50 p-3">
+                          <p className="text-[11px] font-600 text-ghost mb-2">Setup Guide</p>
+                          <ol className="text-[10px] text-dim space-y-1.5 list-decimal list-inside">
+                            <li>Download &amp; install <a href="https://lmstudio.ai" target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:underline">LM Studio</a></li>
+                            <li>Download a model (e.g. Llama, Mistral, Qwen)</li>
+                            <li>Start the local server (Developer &rarr; Start Server)</li>
+                            <li>Click the scan button above to detect models</li>
+                          </ol>
+                        </div>
+
+                        <p className="text-[10px] text-emerald/80 flex items-center gap-1">
+                          <Check className="w-3 h-3" /> No API key needed!
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <label className="block text-xs text-ghost mb-1.5">API Key</label>
+                          <input
+                            type="password"
+                            value={store.config.apiKey}
+                            onChange={e => store.setConfig({ apiKey: e.target.value })}
+                            placeholder={store.config.provider === "openrouter" ? "sk-or-v1-..." : "AIza..."}
+                            className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm font-mono text-text placeholder:text-dim outline-none focus:border-azure/50"
+                          />
+                          <p className="text-[10px] text-dim mt-1">
+                            {store.config.provider === "openrouter"
+                              ? "openrouter.ai/keys — free account includes ⭐ models"
+                              : "aistudio.google.com/apikey"}
+                          </p>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-ghost mb-1.5">Model</label>
+                          <select
+                            value={store.config.model}
+                            onChange={e => store.setConfig({ model: e.target.value })}
+                            className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-azure/50"
+                          >
+                            {(store.config.provider === "gemini" ? GEM_MODELS : OR_MODELS).map(([v, l]) => (
+                              <option key={v} value={v}>{l}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 

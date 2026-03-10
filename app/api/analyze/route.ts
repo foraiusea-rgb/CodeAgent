@@ -6,14 +6,18 @@ export async function POST(req: NextRequest) {
   try {
     const { messages, system, apiKey, provider, model } = await req.json();
 
-    if (!apiKey?.trim()) {
-      return NextResponse.json({ error: "No API key provided" }, { status: 400 });
-    }
-
     let content = "";
-    if (provider === "gemini") {
+    if (provider === "local") {
+      content = await callLocal(messages, system, model);
+    } else if (provider === "gemini") {
+      if (!apiKey?.trim()) {
+        return NextResponse.json({ error: "No API key provided" }, { status: 400 });
+      }
       content = await callGemini(messages, system, apiKey, model);
     } else {
+      if (!apiKey?.trim()) {
+        return NextResponse.json({ error: "No API key provided" }, { status: 400 });
+      }
       content = await callOpenRouter(messages, system, apiKey, model);
     }
 
@@ -21,6 +25,47 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
+async function callLocal(
+  messages: { role: string; content: string }[],
+  system: string,
+  model: string
+): Promise<string> {
+  const baseUrl = "http://localhost:1234";
+  const allMessages = system
+    ? [{ role: "system", content: system }, ...messages]
+    : messages;
+
+  try {
+    const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: model || "default",
+        max_tokens: 8000,
+        temperature: 0.2,
+        messages: allMessages,
+      }),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Local LLM ${resp.status}: ${text.slice(0, 300)}`);
+    }
+
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+    return data.choices?.[0]?.message?.content ?? "";
+  } catch (err) {
+    if (err instanceof TypeError && (err.message.includes("fetch") || err.message.includes("ECONNREFUSED"))) {
+      throw new Error(
+        "Cannot connect to LM Studio. Make sure it is running and the local server is started on port 1234. " +
+        "In LM Studio: load a model then click Start Server (Developer tab)."
+      );
+    }
+    throw err;
   }
 }
 

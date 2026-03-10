@@ -3,7 +3,7 @@ import { create } from "zustand";
 export type Severity = "critical" | "warning" | "info";
 export type DiffStatus = "pending" | "approved" | "rejected";
 export type AgentMode = "review" | "optimize" | "pipeline";
-export type Provider = "openrouter" | "gemini";
+export type Provider = "openrouter" | "gemini" | "local";
 
 export interface CodeFile {
   path: string;

@@ -133,7 +133,7 @@ export default function LandingPage() {
 
           <p className="text-lg text-ghost max-w-xl mx-auto leading-relaxed mb-10">
             Upload your codebase. Get structured AI findings. Apply fixes with one click.
-            Works with any OpenRouter or Gemini model — free tiers included.
+            Works with OpenRouter, Gemini, or your own local LLM via LM Studio — no API key needed for local.
           </p>
 
           {/* CTA */}
@@ -153,7 +153,7 @@ export default function LandingPage() {
                   onClick={() => router.push("/review")}
                   className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium text-ghost hover:text-soft border border-border hover:border-muted transition-all"
                 >
-                  Try without key <ArrowRight className="w-3.5 h-3.5" />
+Try without key <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </>
             ) : (

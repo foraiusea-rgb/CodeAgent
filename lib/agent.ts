@@ -115,7 +115,7 @@ export async function runAgent(mode: AgentMode) {
   if (Object.keys(files).length === 0) {
     throw new Error("No files uploaded. Drop some code files first.");
   }
-  if (!config.apiKey.trim()) {
+  if (config.provider !== "local" && !config.apiKey.trim()) {
     throw new Error("No API key. Add one in Config ⚙️");
   }
 
