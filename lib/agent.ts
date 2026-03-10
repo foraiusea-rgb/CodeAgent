@@ -43,8 +43,9 @@ function buildCodebasePrompt(files: Record<string, CodeFile>, config: { aggressi
 
   const parts = [`Focus areas: ${config.focus.join(", ")}\nAggression level: ${config.aggression}\n\n`];
   let totalChars = 0;
-  // Local LLMs have smaller context windows — limit to ~6K chars (~2K tokens)
-  const MAX_CHARS = config.provider === "local" ? 6000 : 80000;
+  // Local LLMs have smaller context windows (8K default) — limit code to ~20K chars (~5K tokens)
+  // leaving room for system prompt (~1K tokens) and response (~2K tokens)
+  const MAX_CHARS = config.provider === "local" ? 20000 : 80000;
 
   for (const [path, file] of fileEntries) {
     const chunk = `=== FILE: ${path} ===\n${file.content}\n\n`;
