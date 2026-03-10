@@ -1,126 +1,113 @@
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap');
+import { NextRequest, NextResponse } from "next/server";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+export const maxDuration = 60;
 
-:root {
-  --font-display: 'Syne', sans-serif;
-  --font-sans: 'DM Sans', sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+export async function POST(req: NextRequest) {
+  try {
+    const { messages, system, apiKey, provider, model } = await req.json();
+
+    if (!apiKey?.trim()) {
+      return NextResponse.json({ error: "No API key provided" }, { status: 400 });
+    }
+
+    let content = "";
+    if (provider === "gemini") {
+      content = await callGemini(messages, system, apiKey, model);
+    } else {
+      content = await callOpenRouter(messages, system, apiKey, model);
+    }
+
+    return NextResponse.json({ content });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
 
-* { box-sizing: border-box; }
+async function callOpenRouter(
+  messages: { role: string; content: string }[],
+  system: string,
+  apiKey: string,
+  model: string
+): Promise<string> {
+  const allMessages = system
+    ? [{ role: "system", content: system }, ...messages]
+    : messages;
 
-html { scroll-behavior: smooth; }
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://codeagent.vercel.app",
+        "X-Title": "CodeAgent",
+      },
+      body: JSON.stringify({
+        model: model || "deepseek/deepseek-r1-0528:free",
+        max_tokens: 8000,
+        temperature: 0.2,
+        messages: allMessages,
+      }),
+    });
 
-body {
-  background: #050508;
-  color: #e8e8ff;
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+    if (resp.status === 429) {
+      await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 10000));
+      continue;
+    }
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`OpenRouter ${resp.status}: ${text.slice(0, 300)}`);
+    }
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+    return data.choices?.[0]?.message?.content ?? "";
+  }
+  throw new Error("Rate limited after retries. Please wait.");
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #2a2a45; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #4a4a7a; }
+async function callGemini(
+  messages: { role: string; content: string }[],
+  system: string,
+  apiKey: string,
+  model: string
+): Promise<string> {
+  const geminiModel = model || "gemini-2.0-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
 
-/* Selection */
-::selection { background: rgba(77,158,255,0.25); color: #e8e8ff; }
+  const contents = [];
+  if (system) {
+    contents.push({ role: "user", parts: [{ text: "INSTRUCTIONS:\n" + system }] });
+    contents.push({ role: "model", parts: [{ text: "Understood. Returning only valid JSON." }] });
+  }
+  for (const m of messages) {
+    contents.push({
+      role: m.role === "user" ? "user" : "model",
+      parts: [{ text: m.content }],
+    });
+  }
 
-/* Focus */
-:focus-visible { outline: 1px solid rgba(77,158,255,0.6); outline-offset: 2px; }
-
-/* Noise overlay texture */
-.noise-overlay::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
-  pointer-events: none;
-  z-index: 9999;
-  opacity: 0.35;
-}
-
-/* Gradient text */
-.gradient-text {
-  background: linear-gradient(135deg, #4d9eff 0%, #8b5cf6 50%, #ff4d6d 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.gradient-text-azure {
-  background: linear-gradient(135deg, #4d9eff, #8b5cf6);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-/* Glow effects */
-.glow-azure { box-shadow: 0 0 30px rgba(77,158,255,0.2), 0 0 60px rgba(77,158,255,0.05); }
-.glow-violet { box-shadow: 0 0 30px rgba(139,92,246,0.2), 0 0 60px rgba(139,92,246,0.05); }
-
-/* Glass card */
-.glass {
-  background: rgba(20, 20, 34, 0.7);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255,255,255,0.06);
-}
-
-/* Animated gradient border */
-@keyframes borderRotate {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-.gradient-border {
-  position: relative;
-  border-radius: 12px;
-}
-.gradient-border::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: 13px;
-  background: linear-gradient(135deg, #4d9eff, #8b5cf6, #ff4d6d, #4d9eff);
-  background-size: 300% 300%;
-  animation: borderRotate 4s ease infinite;
-  z-index: -1;
-  opacity: 0.7;
-}
-
-/* Code blocks */
-pre, code {
-  font-family: var(--font-mono);
-}
-
-/* Diff colors */
-.diff-add { background: rgba(16, 217, 142, 0.08); color: #10d98e; }
-.diff-remove { background: rgba(255, 77, 109, 0.08); color: #ff4d6d; }
-.diff-context { color: #4a4a7a; }
-
-/* Toast animation */
-@keyframes toastIn {
-  from { transform: translateX(110%); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-@keyframes toastOut {
-  from { transform: translateX(0); opacity: 1; }
-  to { transform: translateX(110%); opacity: 0; }
-}
-
-.toast-enter { animation: toastIn 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
-.toast-exit { animation: toastOut 0.2s ease-in forwards; }
-
-/* Shimmer loading */
-.shimmer {
-  background: linear-gradient(90deg, #141422 0%, #1e1e32 50%, #141422 100%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents,
+        generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
+      }),
+    });
+    if (resp.status === 429) {
+      await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 20000));
+      continue;
+    }
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Gemini ${resp.status}: ${text.slice(0, 300)}`);
+    }
+    const data = await resp.json();
+    const parts = data.candidates?.[0]?.content?.parts;
+    if (!parts?.length) throw new Error("Gemini returned empty response");
+    return parts[0].text ?? "";
+  }
+  throw new Error("Gemini rate limited. Try gemini-1.5-pro or OpenRouter.");
 }
