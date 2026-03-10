@@ -7,6 +7,8 @@ import {
   Zap, Files, Bot, Clock, Settings, Play, Square, Download, Monitor, RefreshCw, Wifi, WifiOff,
   ChevronRight, Check, X, AlertTriangle, Info, AlertCircle,
   Upload, Eye, Code, GitBranch, Link, Sparkles, Search, Rocket, Activity, ArrowUp, ArrowDown, Timer,
+  FileCode2, FileJson, FileText, FileType, Hash, Gem, Terminal, Globe, Palette, Cpu, Pencil,
+  type LucideIcon,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { runAgent } from "@/lib/agent";
@@ -24,14 +26,34 @@ function langFromPath(path: string): string {
   return map[ext] || "text";
 }
 
-function fileIcon(path: string): string {
+// SVG icon + color per file extension (replaces emoji for accessibility + crispness)
+const FILE_ICON_MAP: Record<string, { icon: LucideIcon; color: string }> = {
+  ts: { icon: FileCode2, color: "text-azure" },
+  tsx: { icon: FileCode2, color: "text-azure" },
+  js: { icon: FileCode2, color: "text-amber" },
+  jsx: { icon: FileCode2, color: "text-amber" },
+  py: { icon: FileCode2, color: "text-emerald" },
+  rb: { icon: Gem, color: "text-rose" },
+  go: { icon: Cpu, color: "text-azure/70" },
+  rs: { icon: Cpu, color: "text-amber/80" },
+  java: { icon: FileCode2, color: "text-rose/80" },
+  css: { icon: Palette, color: "text-violet" },
+  html: { icon: Globe, color: "text-amber" },
+  json: { icon: FileJson, color: "text-amber/60" },
+  md: { icon: FileText, color: "text-ghost" },
+  sh: { icon: Terminal, color: "text-emerald/70" },
+  vue: { icon: FileCode2, color: "text-emerald" },
+  svelte: { icon: FileCode2, color: "text-amber" },
+  php: { icon: FileCode2, color: "text-violet/70" },
+  swift: { icon: FileCode2, color: "text-amber" },
+  kt: { icon: FileCode2, color: "text-violet" },
+};
+
+function FileIcon({ path, className = "w-4 h-4" }: { path: string; className?: string }) {
   const ext = path.split(".").pop()?.toLowerCase() || "";
-  const map: Record<string, string> = {
-    ts: "🔷", tsx: "⚛️", js: "📜", jsx: "⚛️", py: "🐍", rb: "💎",
-    go: "🐹", rs: "🦀", java: "☕", css: "🎨", html: "🌐", json: "📋",
-    md: "📝", sh: "💻", vue: "💚", svelte: "🧡", php: "🐘",
-  };
-  return map[ext] || "📄";
+  const cfg = FILE_ICON_MAP[ext] || { icon: FileType, color: "text-dim" };
+  const Icon = cfg.icon;
+  return <Icon className={`${className} ${cfg.color} flex-shrink-0`} />;
 }
 
 function fmtSize(bytes: number): string {
@@ -113,12 +135,12 @@ function FindingCard({ finding }: { finding: Finding }) {
       layout
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`relative rounded-xl border overflow-hidden transition-all ${
+      className={`relative rounded-xl border overflow-hidden transition-colors duration-200 ${
         finding.status === "approved"
           ? "border-emerald/25 bg-emerald/4 opacity-70"
           : finding.status === "rejected"
           ? "border-border bg-card/30 opacity-50"
-          : "border-border bg-card hover:border-border/80"
+          : "border-border bg-card hover:border-muted"
       }`}
     >
       {/* Left accent bar */}
@@ -132,8 +154,10 @@ function FindingCard({ finding }: { finding: Finding }) {
       <div className="pl-3">
         {/* Header */}
         <button
-          className="w-full text-left p-3.5 flex items-start gap-3"
+          className="w-full text-left p-3.5 flex items-start gap-3 min-h-[44px]"
           onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          aria-label={`${sev.label}: ${finding.title}. Click to ${expanded ? "collapse" : "expand"} details.`}
         >
           <div className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-md flex items-center justify-center ${sev.bg} ${sev.border} border`}>
             <sev.icon className={`w-3 h-3 ${sev.color}`} />
@@ -163,7 +187,7 @@ function FindingCard({ finding }: { finding: Finding }) {
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
               className="overflow-hidden"
             >
               <div className="px-3.5 pb-3.5 space-y-3">
@@ -201,13 +225,15 @@ function FindingCard({ finding }: { finding: Finding }) {
                   <div className="flex gap-2">
                     <button
                       onClick={() => approveFinding(finding.id)}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium bg-emerald/10 border border-emerald/25 text-emerald hover:bg-emerald/18 transition-colors"
+                      aria-label={`Apply fix: ${finding.title}`}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium bg-emerald/10 border border-emerald/25 text-emerald hover:bg-emerald/18 transition-colors duration-150 min-h-[36px]"
                     >
                       <Check className="w-3.5 h-3.5" /> Apply fix
                     </button>
                     <button
                       onClick={() => rejectFinding(finding.id)}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium bg-card border border-border text-ghost hover:text-text hover:border-muted transition-colors"
+                      aria-label={`Skip finding: ${finding.title}`}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium bg-card border border-border text-ghost hover:text-text hover:border-muted transition-colors duration-150 min-h-[36px]"
                     >
                       <X className="w-3.5 h-3.5" /> Skip
                     </button>
@@ -243,6 +269,8 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
   const [ghUrl, setGhUrl] = useState("");
   const [ghLoading, setGhLoading] = useState(false);
   const [showTokenDialog, setShowTokenDialog] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
 
   // Load API key from session
   useEffect(() => {
@@ -412,9 +440,9 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
       </AnimatePresence>
 
       {/* Top bar */}
-      <header className="flex-shrink-0 h-14 flex items-center gap-3 px-4 bg-ink border-b border-border">
+      <header className="flex-shrink-0 h-14 flex items-center gap-3 px-4 bg-ink border-b border-border" role="banner">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-gradient-azure flex items-center justify-center">
+          <div className="w-7 h-7 rounded-lg bg-azure flex items-center justify-center">
             <Zap className="w-3.5 h-3.5 text-white" />
           </div>
           <span className="font-display font-700 text-sm">CodeAgent</span>
@@ -422,15 +450,31 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
 
         <div className="w-px h-5 bg-border mx-1" />
 
-        <button
-          className="text-sm text-ghost hover:text-text transition-colors px-2 py-1 rounded hover:bg-card"
-          onClick={() => {
-            const n = prompt("Project name:", store.projectName);
-            if (n) store.setProjectName(n);
-          }}
-        >
-          {store.projectName}
-        </button>
+        {editingName ? (
+          <div className="flex items-center gap-1">
+            <input
+              autoFocus
+              value={nameInput}
+              onChange={e => setNameInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") { if (nameInput.trim()) store.setProjectName(nameInput.trim()); setEditingName(false); }
+                if (e.key === "Escape") setEditingName(false);
+              }}
+              onBlur={() => { if (nameInput.trim()) store.setProjectName(nameInput.trim()); setEditingName(false); }}
+              className="bg-surface border border-azure/40 rounded-md px-2 py-1 text-sm text-text outline-none w-40 font-sans"
+              aria-label="Edit project name"
+            />
+          </div>
+        ) : (
+          <button
+            className="flex items-center gap-1.5 text-sm text-ghost hover:text-text transition-colors px-2 py-1 rounded hover:bg-card min-h-[36px]"
+            onClick={() => { setNameInput(store.projectName); setEditingName(true); }}
+            aria-label="Click to edit project name"
+          >
+            {store.projectName}
+            <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-100 text-dim" />
+          </button>
+        )}
 
         <div className="flex-1" />
 
@@ -550,7 +594,11 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
           )}
         </div>
 
-        <button onClick={handleDownload} className="p-2 rounded-lg hover:bg-card text-ghost hover:text-text transition-colors">
+        <button
+          onClick={handleDownload}
+          aria-label="Download reviewed files"
+          className="p-2.5 rounded-lg hover:bg-card text-ghost hover:text-text transition-colors duration-150 min-w-[44px] min-h-[44px] flex items-center justify-center"
+        >
           <Download className="w-4 h-4" />
         </button>
       </header>
@@ -558,25 +606,27 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
       {/* Body */}
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-56 flex-shrink-0 bg-ink border-r border-border flex flex-col">
+        <aside className="w-56 flex-shrink-0 bg-ink border-r border-border flex flex-col" aria-label="Agent controls">
           {/* Nav */}
-          <nav className="p-2 space-y-0.5">
+          <nav className="p-2 space-y-0.5" aria-label="Main navigation">
             {navItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => store.setActiveView(item.id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all ${
+                aria-current={store.activeView === item.id ? "page" : undefined}
+                aria-label={`${item.label}${item.badge ? ` (${item.badge})` : ""}`}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors duration-150 min-h-[44px] ${
                   store.activeView === item.id
                     ? "bg-azure/10 text-azure border border-azure/15"
-                    : "text-ghost hover:bg-card hover:text-soft"
+                    : "text-ghost hover:bg-card hover:text-soft border border-transparent"
                 }`}
               >
                 <item.icon className="w-4 h-4 flex-shrink-0" />
                 <span className="flex-1 text-left font-medium">{item.label}</span>
                 {item.badge ? (
-                  <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${
+                  <span className={`min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center ${
                     item.id === "findings" ? "bg-amber text-void" : "bg-muted text-soft"
-                  }`}>
+                  }`} aria-hidden="true">
                     {item.badge}
                   </span>
                 ) : null}
@@ -587,8 +637,8 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
           <div className="mx-3 my-1 h-px bg-border" />
 
           {/* Mode selector */}
-          <div className="px-3 py-2">
-            <p className="text-[10px] font-600 text-dim uppercase tracking-widest mb-2">Mode</p>
+          <div className="px-3 py-2" role="radiogroup" aria-label="Analysis mode">
+            <p className="text-[10px] font-600 text-dim uppercase tracking-widest mb-2" id="mode-heading">Mode</p>
             <div className="space-y-1">
               {([
                 { id: "review" as AgentMode, icon: Search, label: "Review", sub: "Bugs & issues" },
@@ -597,8 +647,11 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
               ] as const).map((m) => (
                 <button
                   key={m.id}
+                  role="radio"
+                  aria-checked={store.selectedMode === m.id}
+                  aria-label={`${m.label} mode: ${m.sub}`}
                   onClick={() => store.setSelectedMode(m.id)}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all text-left ${
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg transition-colors duration-150 text-left min-h-[44px] ${
                     store.selectedMode === m.id
                       ? "bg-violet/10 border border-violet/20 text-violet"
                       : "hover:bg-card text-ghost hover:text-soft border border-transparent"
@@ -663,7 +716,8 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
             {store.agentRunning ? (
               <button
                 onClick={handleStop}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-rose/10 border border-rose/25 text-rose text-sm font-600 hover:bg-rose/18 transition-colors"
+                aria-label="Stop the running analysis"
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-rose/10 border border-rose/25 text-rose text-sm font-600 hover:bg-rose/18 transition-colors duration-150 min-h-[44px]"
               >
                 <Square className="w-4 h-4" /> Stop
               </button>
@@ -671,7 +725,8 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
               <button
                 onClick={handleRun}
                 disabled={fileList.length === 0}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-azure text-white text-sm font-display font-700 shadow-lg shadow-azure/20 hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                aria-label={fileList.length === 0 ? "Upload files first to run analysis" : `Run ${store.selectedMode} analysis on ${fileList.length} file(s)`}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-azure text-white text-sm font-display font-700 hover:bg-azure/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150 min-h-[44px]"
               >
                 <Play className="w-4 h-4" /> Run Agent
               </button>
@@ -680,7 +735,7 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 overflow-hidden flex flex-col">
+        <main className="flex-1 overflow-hidden flex flex-col" aria-label="Workspace content">
           {/* FILES view */}
           {store.activeView === "files" && (
             <div className="flex-1 flex overflow-hidden">
@@ -744,19 +799,24 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                     <button
                       key={f.path}
                       onClick={() => store.selectFile(f.path)}
-                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors ${
+                      aria-label={`View ${f.path} (${fmtSize(f.size)})`}
+                      aria-current={store.selectedFile === f.path ? "true" : undefined}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors duration-150 min-h-[36px] ${
                         store.selectedFile === f.path
                           ? "bg-azure/10 text-azure"
                           : "text-ghost hover:bg-card hover:text-soft"
                       }`}
                     >
-                      <span className="text-sm">{fileIcon(f.path)}</span>
+                      <FileIcon path={f.path} className="w-3.5 h-3.5" />
                       <span className="flex-1 text-[11px] font-mono truncate">{f.path}</span>
                       <span className="text-[10px] text-dim">{fmtSize(f.size)}</span>
                     </button>
                   ))}
                   {fileList.length === 0 && (
-                    <p className="text-[11px] text-dim text-center py-6">No files yet</p>
+                    <div className="text-center py-6 px-3">
+                      <p className="text-[11px] text-dim">No files loaded</p>
+                      <p className="text-[10px] text-dim/60 mt-1">Import from GitHub or drop files above</p>
+                    </div>
                   )}
                 </div>
               </div>
@@ -774,9 +834,14 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                     </pre>
                   </>
                 ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center gap-3 text-dim">
-                    <Eye className="w-8 h-8" />
-                    <p className="text-sm">Select a file to preview</p>
+                  <div className="flex-1 flex flex-col items-center justify-center gap-4 text-dim">
+                    <div className="w-12 h-12 rounded-xl bg-card border border-border flex items-center justify-center">
+                      <Eye className="w-6 h-6 text-ghost" />
+                    </div>
+                    <div className="text-center space-y-1">
+                      <p className="text-sm font-500 text-ghost">Select a file to preview</p>
+                      <p className="text-xs text-dim">Click any file in the left panel to view its contents</p>
+                    </div>
                   </div>
                 )}
               </div>
@@ -787,12 +852,26 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
           {store.activeView === "findings" && (
             <div className="flex-1 overflow-y-auto p-4">
               {findingList.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full gap-4 text-dim">
-                  <Bot className="w-12 h-12" />
-                  <div className="text-center">
-                    <p className="font-display text-base font-600 text-ghost mb-1">No findings yet</p>
-                    <p className="text-sm">Upload files and run the agent to see results</p>
+                <div className="flex flex-col items-center justify-center h-full gap-5 text-dim max-w-sm mx-auto">
+                  <div className="w-14 h-14 rounded-2xl bg-card border border-border flex items-center justify-center">
+                    <Bot className="w-7 h-7 text-ghost" />
                   </div>
+                  <div className="text-center space-y-2">
+                    <p className="font-display text-base font-600 text-ghost">No findings yet</p>
+                    <p className="text-sm text-dim leading-relaxed">
+                      {fileList.length === 0
+                        ? "Start by uploading files or importing a GitHub repo from the Files tab."
+                        : `${fileList.length} file(s) loaded. Hit "Run Agent" to start analysis.`}
+                    </p>
+                  </div>
+                  {fileList.length > 0 && !store.agentRunning && (
+                    <button
+                      onClick={handleRun}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-azure text-white text-sm font-600 hover:bg-azure/90 transition-colors duration-150"
+                    >
+                      <Play className="w-3.5 h-3.5" /> Run Agent
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="max-w-2xl mx-auto space-y-2">
@@ -805,7 +884,7 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                   ).map(([file, findings]) => (
                     <div key={file} className="mb-5">
                       <div className="flex items-center gap-2 mb-2 px-1">
-                        <span className="text-sm">{fileIcon(file)}</span>
+                        <FileIcon path={file} className="w-3.5 h-3.5" />
                         <span className="text-xs font-mono text-ghost">{file}</span>
                         <span className="text-xs text-dim">({findings.length})</span>
                         <div className="flex-1 h-px bg-border" />
@@ -833,9 +912,14 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
             <div className="flex-1 overflow-y-auto p-4">
               <div className="max-w-xl mx-auto">
                 {store.timeline.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-64 gap-3 text-dim">
-                    <Clock className="w-8 h-8" />
-                    <p className="text-sm">No events yet</p>
+                  <div className="flex flex-col items-center justify-center h-64 gap-4 text-dim">
+                    <div className="w-12 h-12 rounded-xl bg-card border border-border flex items-center justify-center">
+                      <Clock className="w-6 h-6 text-ghost" />
+                    </div>
+                    <div className="text-center space-y-1">
+                      <p className="text-sm font-500 text-ghost">No events yet</p>
+                      <p className="text-xs text-dim">Activity from analyses will appear here as a timeline</p>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-1">
@@ -1016,12 +1100,16 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                       </select>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-ghost">Auto-apply info-level fixes</span>
+                      <label htmlFor="auto-apply-toggle" className="text-sm text-ghost cursor-pointer">Auto-apply info-level fixes</label>
                       <button
+                        id="auto-apply-toggle"
+                        role="switch"
+                        aria-checked={store.config.autoApproveInfo}
+                        aria-label="Toggle auto-apply for info-level fixes"
                         onClick={() => store.setConfig({ autoApproveInfo: !store.config.autoApproveInfo })}
-                        className={`relative w-9 h-5 rounded-full transition-colors ${store.config.autoApproveInfo ? "bg-azure" : "bg-muted"}`}
+                        className={`relative w-11 h-6 rounded-full transition-colors duration-150 ${store.config.autoApproveInfo ? "bg-azure" : "bg-muted"}`}
                       >
-                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${store.config.autoApproveInfo ? "translate-x-4" : "translate-x-0.5"}`} />
+                        <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-150 ${store.config.autoApproveInfo ? "translate-x-5" : "translate-x-0.5"}`} />
                       </button>
                     </div>
                   </div>

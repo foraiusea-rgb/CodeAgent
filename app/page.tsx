@@ -2,13 +2,19 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Zap, Shield, Rocket, GitBranch, ArrowRight, Code2, Sparkles, CheckCircle } from "lucide-react";
+import { Zap, Shield, Rocket, GitBranch, ArrowRight, Sparkles, CheckCircle, Search, Layers } from "lucide-react";
 
 const FEATURES = [
-  { icon: Shield, label: "Bug Detection", desc: "Catch logic errors, null refs, and edge cases before they hit production" },
-  { icon: Zap, label: "Performance", desc: "Identify bottlenecks, O(n²) loops, and unnecessary re-renders instantly" },
-  { icon: Rocket, label: "Optimization", desc: "Refactor to idiomatic patterns, reduce complexity, improve readability" },
-  { icon: GitBranch, label: "Security", desc: "Spot injection vulnerabilities, insecure deps, and auth flaws" },
+  { icon: Shield, label: "Bug Detection", desc: "Catch logic errors, null refs, and edge cases before they hit production", accent: "text-rose" },
+  { icon: Zap, label: "Performance", desc: "Identify bottlenecks, O(n²) loops, and unnecessary re-renders instantly", accent: "text-amber" },
+  { icon: Rocket, label: "Optimization", desc: "Refactor to idiomatic patterns, reduce complexity, improve readability", accent: "text-emerald" },
+  { icon: GitBranch, label: "Security", desc: "Spot injection vulnerabilities, insecure deps, and auth flaws", accent: "text-violet" },
+];
+
+const MODES = [
+  { icon: Search, name: "Review", desc: "Bugs, security issues, code smells", accent: "azure", bg: "bg-azure/8", border: "border-azure/15" },
+  { icon: Rocket, name: "Optimize", desc: "Performance, patterns, readability", accent: "violet", bg: "bg-violet/8", border: "border-violet/15" },
+  { icon: Layers, name: "Pipeline", desc: "Full review + optimize in one pass", accent: "emerald", bg: "bg-emerald/8", border: "border-emerald/15" },
 ];
 
 const MODELS = [
@@ -22,7 +28,7 @@ function getUserData(id) {
   return user.data
 }
 
-// After CodeAgent  
+// After CodeAgent
 async function getUserData(id: string): Promise<User> {
   // ✓ Parameterized query (SQL injection fix)
   // ✓ Added type safety
@@ -55,28 +61,28 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-void relative overflow-x-hidden">
-      {/* Gradient mesh background */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-azure/5 blur-[120px]" />
-        <div className="absolute top-[10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-violet/6 blur-[120px]" />
-        <div className="absolute bottom-[-10%] left-[30%] w-[400px] h-[400px] rounded-full bg-azure/4 blur-[100px]" />
+      {/* Ambient background — subtle, not neon */}
+      <div className="fixed inset-0 pointer-events-none" aria-hidden="true">
+        <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-azure/4 blur-[140px]" />
+        <div className="absolute top-[10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-violet/4 blur-[140px]" />
         <div
-          className="absolute inset-0 opacity-[0.03]"
+          className="absolute inset-0 opacity-[0.025]"
           style={{
-            backgroundImage: `radial-gradient(circle at 1px 1px, rgba(255,255,255,0.4) 1px, transparent 0)`,
+            backgroundImage: `radial-gradient(circle at 1px 1px, rgba(255,255,255,0.35) 1px, transparent 0)`,
             backgroundSize: "40px 40px",
           }}
         />
       </div>
 
       {/* Nav */}
-      <nav className="relative z-10 flex items-center justify-between px-6 py-5 max-w-7xl mx-auto">
+      <nav className="relative z-10 flex items-center justify-between px-6 py-5 max-w-7xl mx-auto" aria-label="Site navigation">
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
           className="flex items-center gap-2.5"
         >
-          <div className="w-8 h-8 rounded-lg bg-gradient-azure flex items-center justify-center shadow-lg shadow-azure/20">
+          <div className="w-8 h-8 rounded-lg bg-azure flex items-center justify-center">
             <Zap className="w-4 h-4 text-white" />
           </div>
           <span className="font-display font-700 text-lg text-text tracking-tight">CodeAgent</span>
@@ -85,15 +91,22 @@ export default function LandingPage() {
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
           className="flex items-center gap-3"
         >
-          <a href="https://github.com" target="_blank" className="flex items-center gap-1.5 text-sm text-ghost hover:text-soft transition-colors px-3 py-1.5">
+          <a
+            href="https://github.com/foraiusea-rgb/CodeAgent"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-sm text-ghost hover:text-soft transition-colors duration-150 px-3 py-2 min-h-[44px]"
+            aria-label="View source on GitHub"
+          >
             <GitBranch className="w-3.5 h-3.5" />
             GitHub
           </a>
           <button
             onClick={() => router.push("/review")}
-            className="flex items-center gap-2 text-sm font-medium bg-surface border border-border hover:border-azure/40 text-text px-4 py-2 rounded-lg transition-all hover:bg-card"
+            className="flex items-center gap-2 text-sm font-medium bg-surface border border-border hover:border-azure/40 text-text px-4 py-2.5 rounded-lg transition-colors duration-150 hover:bg-card min-h-[44px]"
           >
             Open App <ArrowRight className="w-3.5 h-3.5" />
           </button>
@@ -105,35 +118,36 @@ export default function LandingPage() {
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
           className="text-center max-w-4xl mx-auto"
         >
           {/* Badge */}
-          <div className="inline-flex items-center gap-2 bg-azure/8 border border-azure/20 text-azure text-xs font-medium px-3 py-1.5 rounded-full mb-6">
-            <Sparkles className="w-3 h-3" />
+          <div className="inline-flex items-center gap-2 bg-card border border-border text-ghost text-xs font-medium px-3 py-1.5 rounded-full mb-6">
+            <Sparkles className="w-3 h-3 text-azure" />
             Powered by{" "}
             <motion.span
               key={modelIdx}
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 6 }}
-              className="font-mono"
+              transition={{ duration: 0.25 }}
+              className="font-mono text-text"
             >
               {MODELS[modelIdx]}
             </motion.span>
-            <span className="text-ghost">& more</span>
+            <span className="text-dim">& more</span>
           </div>
 
-          {/* Headline */}
+          {/* Headline — solid text, no gradient */}
           <h1 className="font-display text-6xl md:text-7xl font-800 leading-[0.95] tracking-tight mb-6">
             <span className="text-text">Code review</span>
             <br />
-            <span className="gradient-text">reimagined</span>
+            <span className="text-azure">reimagined</span>
           </h1>
 
           <p className="text-lg text-ghost max-w-xl mx-auto leading-relaxed mb-10">
             Upload your codebase. Get structured AI findings. Apply fixes with one click.
-            Works with OpenRouter, Gemini, or your own local LLM via LM Studio — no API key needed for local.
+            Works with OpenRouter, Gemini, or your own local LLM via LM Studio.
           </p>
 
           {/* CTA */}
@@ -144,22 +158,23 @@ export default function LandingPage() {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => setShowInput(true)}
-                  className="gradient-border relative flex items-center gap-2 px-6 py-3 rounded-xl font-display font-600 text-white bg-gradient-azure text-sm shadow-lg shadow-azure/20 hover:shadow-azure/30 transition-shadow"
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl font-display font-600 text-white bg-azure text-sm hover:bg-azure/90 transition-colors duration-150 min-h-[48px]"
                 >
                   <Zap className="w-4 h-4" />
                   Start with API Key
                 </motion.button>
                 <button
                   onClick={() => router.push("/review")}
-                  className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium text-ghost hover:text-soft border border-border hover:border-muted transition-all"
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium text-ghost hover:text-soft border border-border hover:border-muted transition-colors duration-150 min-h-[48px]"
                 >
-Try without key <ArrowRight className="w-3.5 h-3.5" />
+                  Try without key <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </>
             ) : (
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.2 }}
                 className="flex items-center gap-2 bg-card border border-border rounded-xl p-1.5 w-full max-w-md"
               >
                 <input
@@ -169,11 +184,12 @@ Try without key <ArrowRight className="w-3.5 h-3.5" />
                   onKeyDown={e => e.key === "Enter" && handleLaunch()}
                   placeholder="sk-or-v1-... or your Gemini key"
                   autoFocus
-                  className="flex-1 bg-transparent text-sm text-text placeholder:text-dim px-3 outline-none font-mono"
+                  aria-label="Enter your API key"
+                  className="flex-1 bg-transparent text-sm text-text placeholder:text-dim px-3 outline-none font-mono min-h-[40px]"
                 />
                 <button
                   onClick={handleLaunch}
-                  className="flex items-center gap-1.5 bg-gradient-azure text-white text-sm font-medium px-4 py-2 rounded-lg whitespace-nowrap hover:opacity-90 transition-opacity"
+                  className="flex items-center gap-1.5 bg-azure text-white text-sm font-medium px-4 py-2 rounded-lg whitespace-nowrap hover:bg-azure/90 transition-colors duration-150 min-h-[40px]"
                 >
                   Launch <ArrowRight className="w-3.5 h-3.5" />
                 </button>
@@ -190,32 +206,32 @@ Try without key <ArrowRight className="w-3.5 h-3.5" />
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ delay: 0.15, duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
           className="mt-16 max-w-3xl mx-auto"
         >
-          <div className="glass rounded-2xl overflow-hidden border border-border/60 shadow-2xl shadow-black/50">
+          <div className="rounded-2xl overflow-hidden border border-border bg-card/80 shadow-2xl shadow-black/40">
             {/* Window chrome */}
-            <div className="flex items-center gap-2 px-4 py-3 bg-card/50 border-b border-border/60">
-              <div className="w-3 h-3 rounded-full bg-rose/60" />
-              <div className="w-3 h-3 rounded-full bg-amber/60" />
-              <div className="w-3 h-3 rounded-full bg-emerald/60" />
+            <div className="flex items-center gap-2 px-4 py-3 bg-surface/60 border-b border-border">
+              <div className="w-3 h-3 rounded-full bg-rose/50" aria-hidden="true" />
+              <div className="w-3 h-3 rounded-full bg-amber/50" aria-hidden="true" />
+              <div className="w-3 h-3 rounded-full bg-emerald/50" aria-hidden="true" />
               <span className="ml-3 text-xs text-dim font-mono">user-service.ts</span>
-              <div className="ml-auto flex items-center gap-1.5 text-xs text-emerald bg-emerald/10 border border-emerald/20 px-2 py-0.5 rounded-full">
+              <div className="ml-auto flex items-center gap-1.5 text-xs text-emerald bg-emerald/8 border border-emerald/15 px-2 py-0.5 rounded-full">
                 <CheckCircle className="w-3 h-3" />
                 2 fixes applied
               </div>
             </div>
-            <pre className="p-5 text-xs font-mono leading-relaxed overflow-x-auto text-soft">
+            <pre className="p-5 text-xs font-mono leading-relaxed overflow-x-auto text-soft" aria-label="Code sample showing before and after CodeAgent">
               <code>{CODE_SAMPLE}</code>
             </pre>
           </div>
         </motion.div>
 
-        {/* Features */}
+        {/* Features — varied accent colors per feature, no glass */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.35, duration: 0.6 }}
+          transition={{ delay: 0.25, duration: 0.5 }}
           className="mt-24 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-5xl mx-auto"
         >
           {FEATURES.map((f, i) => (
@@ -223,11 +239,11 @@ Try without key <ArrowRight className="w-3.5 h-3.5" />
               key={f.label}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 + i * 0.08 }}
-              className="glass rounded-xl p-5 group hover:border-azure/20 transition-all cursor-default"
+              transition={{ delay: 0.3 + i * 0.06 }}
+              className="rounded-xl p-5 bg-card border border-border group hover:border-muted transition-colors duration-200 cursor-default"
             >
-              <div className="w-9 h-9 rounded-lg bg-azure/10 border border-azure/15 flex items-center justify-center mb-3 group-hover:bg-azure/15 transition-colors">
-                <f.icon className="w-4.5 h-4.5 text-azure" />
+              <div className={`w-9 h-9 rounded-lg bg-surface border border-border flex items-center justify-center mb-3 group-hover:border-muted transition-colors duration-200`}>
+                <f.icon className={`w-4 h-4 ${f.accent}`} />
               </div>
               <div className="font-display font-600 text-sm text-text mb-1">{f.label}</div>
               <div className="text-xs text-ghost leading-relaxed">{f.desc}</div>
@@ -235,30 +251,28 @@ Try without key <ArrowRight className="w-3.5 h-3.5" />
           ))}
         </motion.div>
 
-        {/* Three modes */}
+        {/* Three modes — SVG icons instead of emoji */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
+          transition={{ delay: 0.4 }}
           className="mt-24 text-center max-w-3xl mx-auto"
         >
           <h2 className="font-display text-3xl font-700 text-text mb-3">Three modes. One workflow.</h2>
           <p className="text-ghost text-sm mb-10">Pick the depth you need — from a quick review to a full refactor pipeline.</p>
 
           <div className="grid grid-cols-3 gap-4">
-            {[
-              { icon: "🔍", name: "Review", desc: "Bugs, security issues, code smells", color: "azure" },
-              { icon: "🚀", name: "Optimize", desc: "Performance, patterns, readability", color: "violet" },
-              { icon: "⚡", name: "Pipeline", desc: "Full review + optimize in one pass", color: "emerald" },
-            ].map((m, i) => (
+            {MODES.map((m, i) => (
               <motion.div
                 key={m.name}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.55 + i * 0.08 }}
-                className="glass rounded-xl p-5 text-center group cursor-default hover:border-white/10 transition-all"
+                transition={{ delay: 0.45 + i * 0.06 }}
+                className={`rounded-xl p-5 text-center group cursor-default border ${m.border} ${m.bg} hover:border-muted transition-colors duration-200`}
               >
-                <div className="text-3xl mb-3">{m.icon}</div>
+                <div className={`w-10 h-10 rounded-xl border ${m.border} ${m.bg} flex items-center justify-center mx-auto mb-3`}>
+                  <m.icon className={`w-5 h-5 text-${m.accent}`} />
+                </div>
                 <div className="font-display font-700 text-sm text-text mb-1">{m.name}</div>
                 <div className="text-xs text-ghost">{m.desc}</div>
               </motion.div>
@@ -270,12 +284,12 @@ Try without key <ArrowRight className="w-3.5 h-3.5" />
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.7 }}
+          transition={{ delay: 0.55 }}
           className="mt-24 text-center"
         >
           <button
             onClick={() => router.push("/review")}
-            className="inline-flex items-center gap-2 font-display font-600 text-sm text-ghost hover:text-soft transition-colors"
+            className="inline-flex items-center gap-2 font-display font-600 text-sm text-ghost hover:text-soft transition-colors duration-150 min-h-[44px]"
           >
             Open workspace <ArrowRight className="w-4 h-4" />
           </button>
