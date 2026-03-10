@@ -6,7 +6,7 @@ import { useDropzone } from "react-dropzone";
 import {
   Zap, Files, Bot, Clock, Settings, Play, Square, Download, Monitor, RefreshCw, Wifi, WifiOff,
   ChevronRight, Check, X, AlertTriangle, Info, AlertCircle,
-  Upload, Eye, Code, GitBranch, Sparkles, Search, Rocket,
+  Upload, Eye, Code, GitBranch, Link, Sparkles, Search, Rocket,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { runAgent } from "@/lib/agent";
@@ -212,6 +212,8 @@ export default function WorkspaceClient() {
 const [localModels, setLocalModels] = useState<LocalModel[]>([]);
   const [localStatus, setLocalStatus] = useState<"idle" | "scanning" | "connected" | "offline">("idle");
   const [localMessage, setLocalMessage] = useState("");
+  const [ghUrl, setGhUrl] = useState("");
+  const [ghLoading, setGhLoading] = useState(false);
 
   // Load API key from session
   useEffect(() => {
@@ -257,6 +259,33 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
       scanLocalModels();
     }
   }, [store.config.provider, localStatus, scanLocalModels]);
+
+  // Import from GitHub URL
+  const handleGitHubImport = useCallback(async () => {
+    if (!ghUrl.trim()) return;
+    setGhLoading(true);
+    try {
+      const resp = await fetch("/api/github-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: ghUrl.trim() }),
+      });
+      const data = await resp.json();
+      if (data.error) {
+        showToast(data.error, "err");
+        return;
+      }
+      store.addFiles(data.files);
+      store.setProjectName(data.repo.split("/").pop() || "Imported");
+      showToast("Imported " + data.imported + "/" + data.totalFound + " files from " + data.repo, "ok");
+      setGhUrl("");
+      store.setActiveView("files");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Import failed", "err");
+    } finally {
+      setGhLoading(false);
+    }
+  }, [ghUrl, store, showToast]);
   // File drop
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const readers = acceptedFiles.map(
@@ -522,7 +551,38 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                 </div>
 
                 {/* Drop zone */}
-                <label className="mx-2 mt-2 mb-1 flex flex-col items-center justify-center gap-1.5 border border-dashed border-border rounded-lg p-4 cursor-pointer hover:border-azure/40 hover:bg-azure/4 transition-all">
+                {/* GitHub Import */}
+                <div className="mx-2 mt-2">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <GitBranch className="w-3 h-3 text-dim" />
+                    <span className="text-[10px] font-600 text-dim uppercase tracking-wider">Import from GitHub</span>
+                  </div>
+                  <div className="flex gap-1">
+                    <input
+                      type="text"
+                      value={ghUrl}
+                      onChange={e => setGhUrl(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleGitHubImport()}
+                      placeholder="github.com/user/repo"
+                      className="flex-1 min-w-0 bg-surface border border-border rounded-md px-2 py-1.5 text-[11px] font-mono text-text placeholder:text-dim outline-none focus:border-azure/50"
+                    />
+                    <button
+                      onClick={handleGitHubImport}
+                      disabled={ghLoading || !ghUrl.trim()}
+                      className="px-2 py-1.5 rounded-md bg-azure/10 border border-azure/20 text-azure text-[10px] font-600 hover:bg-azure/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                    >
+                      {ghLoading ? "Loading..." : "Import"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mx-2 my-1.5 flex items-center gap-2">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-[9px] text-dim">OR</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+
+                                <label className="mx-2 mt-2 mb-1 flex flex-col items-center justify-center gap-1.5 border border-dashed border-border rounded-lg p-4 cursor-pointer hover:border-azure/40 hover:bg-azure/4 transition-all">
                   <Upload className="w-5 h-5 text-dim" />
                   <span className="text-[10px] text-dim text-center">Click or drop files</span>
                   <input type="file" multiple className="hidden" onChange={(e) => {
