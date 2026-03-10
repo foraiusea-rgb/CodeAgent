@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { runAgent } from "@/lib/agent";
+import { chunkAllFiles, embedChunks, embedQuery, searchEmbeddings, findSimilarCode } from "@/lib/embeddings";
 import type { Finding, AgentMode } from "@/lib/store";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -394,6 +395,79 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
     showToast("Agent stopped", "ok");
   };
 
+  // Resolve the embedding API key
+  const embeddingKey = store.config.embeddingApiKey || (store.config.provider === "gemini" ? store.config.apiKey : "");
+
+  const handleEmbed = async () => {
+    if (!embeddingKey) {
+      showToast("Add a Gemini API key in Config to use semantic search", "err");
+      return;
+    }
+    try {
+      store.setEmbeddingStatus("embedding");
+      store.setEmbeddingProgress("Chunking files...");
+
+      // Only embed new/changed files
+      const existingIds = new Set(store.embeddedChunks.map((c) => c.id));
+      const allChunks = chunkAllFiles(store.files);
+      const newChunks = allChunks.filter((c) => !existingIds.has(c.id));
+
+      if (newChunks.length === 0) {
+        store.setEmbeddingStatus("ready");
+        store.setEmbeddingProgress("");
+        showToast("All files already indexed", "ok");
+        return;
+      }
+
+      store.setEmbeddingProgress(`Embedding ${newChunks.length} chunks...`);
+
+      const embedded = await embedChunks(newChunks, embeddingKey, (done, total) => {
+        store.setEmbeddingProgress(`Embedding ${done}/${total} chunks...`);
+      });
+
+      if (existingIds.size > 0) {
+        store.addEmbeddedChunks(embedded);
+      } else {
+        store.setEmbeddedChunks(embedded);
+      }
+      store.setEmbeddingProgress("");
+      store.addTimeline({ message: `Indexed ${embedded.length} code chunks for semantic search`, type: "system" });
+      showToast(`Embedded ${embedded.length} chunks!`, "ok");
+    } catch (err) {
+      store.setEmbeddingStatus("error");
+      store.setEmbeddingProgress(err instanceof Error ? err.message : "Embedding failed");
+      showToast(err instanceof Error ? err.message : "Embedding failed", "err");
+    }
+  };
+
+  const handleSearch = async () => {
+    if (!store.searchQuery.trim() || store.embeddedChunks.length === 0) return;
+    if (!embeddingKey) {
+      showToast("Add a Gemini API key in Config", "err");
+      return;
+    }
+    try {
+      store.setSearchLoading(true);
+      const queryEmbedding = await embedQuery(store.searchQuery, embeddingKey);
+      const results = searchEmbeddings(queryEmbedding, store.embeddedChunks, 20, 0.25);
+      store.setSearchResults(results);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Search failed", "err");
+    } finally {
+      store.setSearchLoading(false);
+    }
+  };
+
+  const handleFindSimilar = (filePath: string) => {
+    const matchingChunks = store.embeddedChunks.filter((c) => c.filePath === filePath);
+    if (matchingChunks.length > 0) {
+      const results = findSimilarCode(matchingChunks[0], store.embeddedChunks, 10, 0.4);
+      store.setSearchResults(results);
+      store.setSearchQuery(`Similar to: ${filePath}`);
+      store.setActiveView("search");
+    }
+  };
+
   const handleDownload = () => {
     const files = Object.entries(store.files);
     if (!files.length) return showToast("No files to download", "err");
@@ -414,6 +488,7 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
   const navItems = [
     { id: "files" as const, icon: Files, label: "Files", badge: fileList.length || null },
     { id: "findings" as const, icon: Bot, label: "Findings", badge: pendingCount || null },
+    { id: "search" as const, icon: Search, label: "Search", badge: store.embeddingStatus === "ready" ? store.embeddedChunks.length : null },
     { id: "timeline" as const, icon: Clock, label: "Timeline", badge: null },
     { id: "config" as const, icon: Settings, label: "Config", badge: null },
   ];
@@ -667,6 +742,58 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
             </div>
           </div>
 
+          {/* Semantic Search Controls */}
+          {fileList.length > 0 && (
+            <>
+              <div className="mx-3 my-1 h-px bg-border" />
+              <div className="px-3 py-2">
+                <p className="text-[10px] font-600 text-dim uppercase tracking-widest mb-2">Semantic Search</p>
+                <div className="space-y-1.5">
+                  {store.embeddingStatus === "idle" && (
+                    <button
+                      onClick={handleEmbed}
+                      disabled={!embeddingKey}
+                      aria-label="Embed files for semantic search"
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-xs font-600 bg-violet/10 border border-violet/20 text-violet hover:bg-violet/20 disabled:opacity-40 transition-colors duration-150 min-h-[40px]"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" /> Embed Files
+                    </button>
+                  )}
+                  {store.embeddingStatus === "embedding" && (
+                    <div className="text-center py-1.5">
+                      <div className="text-[10px] text-violet animate-pulse">{store.embeddingProgress || "Embedding..."}</div>
+                    </div>
+                  )}
+                  {store.embeddingStatus === "ready" && (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-[10px] text-emerald">
+                        <Check className="w-3 h-3" />
+                        {store.embeddedChunks.length} chunks
+                      </div>
+                      <button
+                        onClick={handleEmbed}
+                        className="text-[10px] text-dim hover:text-violet transition-colors"
+                      >
+                        Re-index
+                      </button>
+                    </div>
+                  )}
+                  {store.embeddingStatus === "error" && (
+                    <div className="space-y-1">
+                      <p className="text-[10px] text-rose truncate">{store.embeddingProgress}</p>
+                      <button onClick={handleEmbed} className="text-[10px] text-dim hover:text-violet transition-colors">
+                        Retry
+                      </button>
+                    </div>
+                  )}
+                  {!embeddingKey && store.embeddingStatus === "idle" && (
+                    <p className="text-[9px] text-dim">Requires Gemini API key in Config</p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
           {/* Enhanced Progress */}
           {store.agentRunning && store.totalPasses > 0 && (
             <div className="px-3 py-2 space-y-2">
@@ -827,7 +954,15 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                   <>
                     <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-surface/30">
                       <Code className="w-3.5 h-3.5 text-dim" />
-                      <span className="text-xs font-mono text-ghost">{store.selectedFile}</span>
+                      <span className="text-xs font-mono text-ghost flex-1">{store.selectedFile}</span>
+                      {store.embeddingStatus === "ready" && store.selectedFile && (
+                        <button
+                          onClick={() => handleFindSimilar(store.selectedFile!)}
+                          className="text-[10px] text-violet hover:text-violet/80 transition-colors duration-150 px-2 py-1 rounded hover:bg-violet/8"
+                        >
+                          Find Similar
+                        </button>
+                      )}
                     </div>
                     <pre className="flex-1 overflow-auto p-4 text-xs font-mono leading-relaxed text-soft">
                       <code>{store.files[store.selectedFile].content}</code>
@@ -904,6 +1039,97 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* SEARCH view */}
+          {store.activeView === "search" && (
+            <div className="flex-1 overflow-hidden flex flex-col">
+              {/* Search bar */}
+              <div className="px-4 py-3 border-b border-border bg-surface/30">
+                <div className="flex gap-2 max-w-2xl">
+                  <input
+                    type="text"
+                    value={store.searchQuery}
+                    onChange={(e) => store.setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                    placeholder="Search by meaning... e.g. 'authentication logic' or 'error handling'"
+                    aria-label="Semantic search query"
+                    className="flex-1 bg-surface border border-border rounded-lg px-3 py-2.5 text-sm text-text placeholder:text-dim outline-none focus:border-violet/50"
+                  />
+                  <button
+                    onClick={handleSearch}
+                    disabled={store.searchLoading || !store.searchQuery.trim() || store.embeddedChunks.length === 0}
+                    aria-label="Run semantic search"
+                    className="px-4 py-2.5 rounded-lg bg-violet text-white text-sm font-600 hover:bg-violet/90 disabled:opacity-40 transition-colors duration-150 min-h-[44px]"
+                  >
+                    {store.searchLoading ? "Searching..." : "Search"}
+                  </button>
+                </div>
+                {store.embeddingStatus !== "ready" && (
+                  <p className="text-[10px] text-amber mt-2">
+                    Embed files first using the sidebar button to enable semantic search.
+                  </p>
+                )}
+              </div>
+
+              {/* Results */}
+              <div className="flex-1 overflow-y-auto p-4">
+                {store.searchResults.length === 0 && !store.searchLoading ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-5 text-dim max-w-sm mx-auto">
+                    <div className="w-14 h-14 rounded-2xl bg-card border border-border flex items-center justify-center">
+                      <Search className="w-7 h-7 text-ghost" />
+                    </div>
+                    <div className="text-center space-y-2">
+                      <p className="font-display text-base font-600 text-ghost">Semantic Code Search</p>
+                      <p className="text-sm text-dim leading-relaxed">
+                        {store.embeddingStatus === "ready"
+                          ? "Type a query to search your codebase by meaning — not just keywords."
+                          : "Embed your files first, then search by meaning. E.g. \"find the login logic\" will find authentication code even without the word \"login\"."}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="max-w-3xl mx-auto space-y-3">
+                    <p className="text-xs text-dim mb-2">{store.searchResults.length} results for &ldquo;{store.searchQuery}&rdquo;</p>
+                    {store.searchResults.map((result) => (
+                      <button
+                        key={result.chunk.id}
+                        onClick={() => {
+                          store.selectFile(result.chunk.filePath);
+                          store.setActiveView("files");
+                        }}
+                        aria-label={`View ${result.chunk.filePath} lines ${result.chunk.startLine}-${result.chunk.endLine}`}
+                        className="w-full text-left rounded-xl border border-border bg-card hover:border-muted p-4 transition-colors duration-150"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <FileIcon path={result.chunk.filePath} className="w-3.5 h-3.5" />
+                            <span className="text-xs font-mono text-ghost">{result.chunk.filePath}</span>
+                            <span className="text-[10px] text-dim font-mono">
+                              L{result.chunk.startLine}–{result.chunk.endLine}
+                            </span>
+                          </div>
+                          <span
+                            className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
+                              result.score > 0.7
+                                ? "bg-emerald/10 text-emerald"
+                                : result.score > 0.5
+                                ? "bg-amber/10 text-amber"
+                                : "bg-dim/10 text-dim"
+                            }`}
+                          >
+                            {(result.score * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <pre className="text-[11px] font-mono text-soft leading-relaxed overflow-hidden max-h-20">
+                          <code>{result.chunk.preview}</code>
+                        </pre>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1081,6 +1307,30 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                     )}
                   </div>
                 </div>
+
+                {/* Embedding API Key — shown when not using Gemini provider */}
+                {store.config.provider !== "gemini" && (
+                  <div className="rounded-xl border border-border bg-card overflow-hidden">
+                    <div className="px-4 py-3 border-b border-border bg-surface/50">
+                      <p className="text-[11px] font-700 text-dim uppercase tracking-widest">Semantic Search</p>
+                    </div>
+                    <div className="p-4 space-y-2">
+                      <div>
+                        <label className="block text-xs text-ghost mb-1.5">Gemini Embedding Key</label>
+                        <input
+                          type="password"
+                          value={store.config.embeddingApiKey}
+                          onChange={(e) => store.setConfig({ embeddingApiKey: e.target.value })}
+                          placeholder="AIza... (from aistudio.google.com/apikey)"
+                          className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm font-mono text-text placeholder:text-dim outline-none focus:border-violet/50"
+                        />
+                        <p className="text-[10px] text-dim mt-1">
+                          Optional — needed to use semantic search when using OpenRouter or Local provider.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="rounded-xl border border-border bg-card overflow-hidden">
                   <div className="px-4 py-3 border-b border-border bg-surface/50">

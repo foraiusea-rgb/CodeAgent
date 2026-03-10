@@ -45,11 +45,28 @@ export interface TokenUsage {
 
 export interface Config {
   apiKey: string;
+  embeddingApiKey: string;
   provider: Provider;
   model: string;
   aggression: "conservative" | "balanced" | "aggressive";
   autoApproveInfo: boolean;
   focus: string[];
+}
+
+export interface EmbeddedChunk {
+  id: string;
+  filePath: string;
+  startLine: number;
+  endLine: number;
+  content: string;
+  preview: string;
+  embedding: number[];
+  magnitude: number;
+}
+
+export interface SearchResult {
+  chunk: Omit<EmbeddedChunk, "embedding" | "magnitude">;
+  score: number;
 }
 
 interface AppState {
@@ -102,12 +119,28 @@ interface AppState {
   setConfig: (c: Partial<Config>) => void;
 
   // UI
-  activeView: "files" | "findings" | "timeline" | "config";
+  activeView: "files" | "findings" | "search" | "timeline" | "config";
   selectedMode: AgentMode;
   setActiveView: (v: AppState["activeView"]) => void;
   setSelectedMode: (m: AgentMode) => void;
   projectName: string;
   setProjectName: (n: string) => void;
+
+  // Embeddings
+  embeddedChunks: EmbeddedChunk[];
+  embeddingStatus: "idle" | "embedding" | "ready" | "error";
+  embeddingProgress: string;
+  searchQuery: string;
+  searchResults: SearchResult[];
+  searchLoading: boolean;
+  setEmbeddedChunks: (chunks: EmbeddedChunk[]) => void;
+  addEmbeddedChunks: (chunks: EmbeddedChunk[]) => void;
+  clearEmbeddings: () => void;
+  setEmbeddingStatus: (status: "idle" | "embedding" | "ready" | "error") => void;
+  setEmbeddingProgress: (msg: string) => void;
+  setSearchQuery: (query: string) => void;
+  setSearchResults: (results: SearchResult[]) => void;
+  setSearchLoading: (loading: boolean) => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -120,7 +153,7 @@ export const useStore = create<AppState>((set, get) => ({
         ...Object.fromEntries(newFiles.map((f) => [f.path, f])),
       },
     })),
-  clearFiles: () => set({ files: {}, selectedFile: null }),
+  clearFiles: () => set({ files: {}, selectedFile: null, embeddedChunks: [], embeddingStatus: "idle" as const, embeddingProgress: "", searchResults: [], searchQuery: "" }),
   selectFile: (path) => set({ selectedFile: path }),
 
   findings: {},
@@ -218,6 +251,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   config: {
     apiKey: "",
+    embeddingApiKey: "",
     provider: "openrouter",
     model: "qwen/qwen3-coder:free",
     aggression: "balanced",
@@ -232,4 +266,20 @@ export const useStore = create<AppState>((set, get) => ({
   setSelectedMode: (m) => set({ selectedMode: m }),
   projectName: "Untitled Project",
   setProjectName: (n) => set({ projectName: n }),
+
+  // Embeddings
+  embeddedChunks: [],
+  embeddingStatus: "idle",
+  embeddingProgress: "",
+  searchQuery: "",
+  searchResults: [],
+  searchLoading: false,
+  setEmbeddedChunks: (chunks) => set({ embeddedChunks: chunks, embeddingStatus: "ready" as const }),
+  addEmbeddedChunks: (chunks) => set((s) => ({ embeddedChunks: [...s.embeddedChunks, ...chunks] })),
+  clearEmbeddings: () => set({ embeddedChunks: [], embeddingStatus: "idle" as const, embeddingProgress: "", searchResults: [], searchQuery: "" }),
+  setEmbeddingStatus: (status) => set({ embeddingStatus: status }),
+  setEmbeddingProgress: (msg) => set({ embeddingProgress: msg }),
+  setSearchQuery: (query) => set({ searchQuery: query }),
+  setSearchResults: (results) => set({ searchResults: results }),
+  setSearchLoading: (loading) => set({ searchLoading: loading }),
 }));
