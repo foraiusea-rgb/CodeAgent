@@ -202,7 +202,7 @@ function FindingCard({ finding }: { finding: Finding }) {
 export default function WorkspaceClient() {
   const store = useStore();
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
-  const toastTimer = useRef<NodeJS.Timeout>();
+  const toastTimer = useRef<NodeJS.Timeout | null>(null);
 
   // Load API key from session
   useEffect(() => {
