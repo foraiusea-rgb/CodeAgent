@@ -212,7 +212,7 @@ export default function WorkspaceClient() {
   }, []);
 
   const showToast = useCallback((msg: string, type: "ok" | "err" = "ok") => {
-    clearTimeout(toastTimer.current);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ msg, type });
     toastTimer.current = setTimeout(() => setToast(null), 4000);
   }, []);
