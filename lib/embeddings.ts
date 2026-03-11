@@ -3,6 +3,7 @@
 // No database needed — embeddings stored in Zustand store.
 
 import type { CodeFile, EmbeddedChunk, SearchResult } from "./store";
+import { callEmbeddings } from "./llm-client";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,7 +73,7 @@ export function chunkAllFiles(files: Record<string, CodeFile>): CodeChunk[] {
 
 const BATCH_SIZE = 50;
 
-/** Embed an array of code chunks via /api/embeddings. Returns EmbeddedChunks. */
+/** Embed an array of code chunks directly via Gemini API (no serverless proxy). */
 export async function embedChunks(
   chunks: CodeChunk[],
   apiKey: string,
@@ -83,26 +84,14 @@ export async function embedChunks(
   for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
     const batch = chunks.slice(i, i + BATCH_SIZE);
 
-    const resp = await fetch("/api/embeddings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        texts: batch.map((c) => c.content),
-        apiKey,
-        taskType: "RETRIEVAL_DOCUMENT",
-      }),
-    });
-
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: resp.statusText }));
-      throw new Error(err.error || `Embedding failed: ${resp.status}`);
-    }
-
-    const data = await resp.json();
+    const embeddings = await callEmbeddings(
+      batch.map((c) => c.content),
+      apiKey,
+      "RETRIEVAL_DOCUMENT"
+    );
 
     for (let j = 0; j < batch.length; j++) {
-      const embedding = data.embeddings[j];
-      // Pre-compute magnitude for fast cosine similarity
+      const embedding = embeddings[j];
       let mag = 0;
       for (let k = 0; k < embedding.length; k++) mag += embedding[k] * embedding[k];
       mag = Math.sqrt(mag);
@@ -120,28 +109,13 @@ export async function embedChunks(
   return results;
 }
 
-/** Embed a single search query. Uses CODE_RETRIEVAL_QUERY task type. */
+/** Embed a single search query directly via Gemini API. */
 export async function embedQuery(
   query: string,
   apiKey: string
 ): Promise<number[]> {
-  const resp = await fetch("/api/embeddings", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      texts: [query],
-      apiKey,
-      taskType: "CODE_RETRIEVAL_QUERY",
-    }),
-  });
-
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ error: resp.statusText }));
-    throw new Error(err.error || `Query embedding failed: ${resp.status}`);
-  }
-
-  const data = await resp.json();
-  return data.embeddings[0];
+  const embeddings = await callEmbeddings([query], apiKey, "CODE_RETRIEVAL_QUERY");
+  return embeddings[0];
 }
 
 // ── Similarity math ──────────────────────────────────────────────────────────

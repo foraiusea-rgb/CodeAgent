@@ -1,4 +1,5 @@
 import { useStore, type AgentMode, type Finding, type CodeFile, type TokenUsage } from "./store";
+import { callLLM } from "./llm-client";
 
 const SYSTEM_REVIEW = `You are an expert code reviewer. Analyze the provided codebase and return a JSON array of findings.
 
@@ -100,30 +101,21 @@ async function callAI(
   systemPrompt: string,
   config: ReturnType<typeof useStore.getState>["config"]
 ): Promise<{ content: string; usage: TokenUsage }> {
-  const response = await fetch("/api/analyze", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      messages: [{ role: "user", content: userPrompt }],
-      system: systemPrompt,
-      apiKey: config.apiKey,
-      provider: config.provider,
-      model: config.model,
-    }),
-  });
+  // Direct browser-to-API call — no Vercel serverless proxy, no 504 timeouts
+  const result = await callLLM(
+    [{ role: "user", content: userPrompt }],
+    systemPrompt,
+    config.apiKey,
+    config.provider,
+    config.model
+  );
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(err.error || `HTTP ${response.status}`);
-  }
-
-  const data = await response.json();
   return {
-    content: data.content || "",
+    content: result.content || "",
     usage: {
-      promptTokens: data.usage?.prompt_tokens ?? 0,
-      completionTokens: data.usage?.completion_tokens ?? 0,
-      totalTokens: data.usage?.total_tokens ?? 0,
+      promptTokens: result.usage.prompt_tokens,
+      completionTokens: result.usage.completion_tokens,
+      totalTokens: result.usage.total_tokens,
     },
   };
 }
