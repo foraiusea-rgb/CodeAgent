@@ -288,7 +288,7 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
     root.classList.toggle("light", store.theme === "light");
   }, [store.theme]);
 
-  // Load API key from session
+  // Load API key from session + migrate stale Gemini model IDs
   useEffect(() => {
     const key = sessionStorage.getItem("ca_api_key");
     const prov = sessionStorage.getItem("ca_provider") as "openrouter" | "gemini" | "local" | null;
@@ -296,6 +296,19 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
       store.setConfig({ provider: "local", apiKey: "", model: "" });
     } else if (key) {
       store.setConfig({ apiKey: key, provider: prov || "openrouter" });
+    }
+
+    // Auto-fix retired/expired Gemini model IDs persisted in localStorage
+    const RETIRED_GEMINI: Record<string, string> = {
+      "gemini-2.5-pro-preview-06-05": "gemini-2.5-pro",
+      "gemini-2.5-pro-preview-05-06": "gemini-2.5-pro",
+      "gemini-1.5-pro": "gemini-2.5-flash",
+      "gemini-1.5-flash": "gemini-2.5-flash",
+      "gemini-1.0-pro": "gemini-2.5-flash",
+    };
+    const currentModel = useStore.getState().config.model;
+    if (RETIRED_GEMINI[currentModel]) {
+      store.setConfig({ model: RETIRED_GEMINI[currentModel] });
     }
   }, []);
 
