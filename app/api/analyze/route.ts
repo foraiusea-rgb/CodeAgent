@@ -174,7 +174,7 @@ async function callGemini(
   apiKey: string,
   model: string
 ): Promise<AIResult> {
-  const geminiModel = model || "gemini-2.0-flash";
+  const geminiModel = model || "gemini-2.5-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
 
   const contents = [];
@@ -218,5 +218,5 @@ async function callGemini(
       },
     };
   }
-  throw new Error("Gemini rate limited. Try gemini-1.5-pro or OpenRouter.");
+  throw new Error("Gemini rate limited. Try gemini-2.5-flash-lite or OpenRouter.");
 }

@@ -163,7 +163,7 @@ async function callGemini(
   apiKey: string,
   model: string
 ): Promise<LLMResult> {
-  const geminiModel = model || "gemini-2.0-flash";
+  const geminiModel = model || "gemini-2.5-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
 
   const contents = [];
@@ -207,7 +207,7 @@ async function callGemini(
       },
     };
   }
-  throw new Error("Gemini rate limited. Try gemini-1.5-pro or OpenRouter.");
+  throw new Error("Gemini rate limited. Try gemini-2.5-flash-lite or OpenRouter.");
 }
 
 // ── Gemini Embeddings (direct from browser) ─────────────────────────────────
@@ -223,7 +223,7 @@ export async function callEmbeddings(
   if (!apiKey?.trim()) throw new Error("No API key provided. Add your Gemini key in Config.");
   if (!texts?.length) throw new Error("No texts provided");
 
-  const embeddingModel = model || "gemini-embedding-exp-03-07";
+  const embeddingModel = model || "text-embedding-004";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${embeddingModel}:batchEmbedContents?key=${apiKey}`;
 
   const requests = texts.map((text) => ({

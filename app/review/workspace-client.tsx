@@ -112,9 +112,10 @@ const OR_MODELS = [
   ["nvidia/llama-nemotron-embed-vl-1b-v2:free", "Nemotron Embed VL 1B"],
 ];
 const GEM_MODELS = [
-  ["gemini-2.5-pro-preview-06-05", "Gemini 2.5 Pro"],
+  ["gemini-2.5-flash", "Gemini 2.5 Flash"],
+  ["gemini-2.5-pro", "Gemini 2.5 Pro"],
+  ["gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite"],
   ["gemini-2.0-flash", "Gemini 2.0 Flash"],
-  ["gemini-1.5-pro", "Gemini 1.5 Pro"],
 ];
 // Local LLM state interface
 interface LocalModel {

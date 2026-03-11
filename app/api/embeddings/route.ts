@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Too many texts (max 200 per request)" }, { status: 400 });
     }
 
-    const embeddingModel = model || "gemini-embedding-exp-03-07";
+    const embeddingModel = model || "text-embedding-004";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${embeddingModel}:batchEmbedContents?key=${apiKey}`;
 
     const requests = texts.map((text: string) => ({
