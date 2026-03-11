@@ -1,6 +1,6 @@
-// ── Direct browser-to-API LLM calls ─────────────────────────────────────────
-// Bypasses Vercel serverless routes to avoid 504 timeouts on Hobby plan.
-// API keys are already client-side (sessionStorage), so no security change.
+// ── Hybrid LLM client ────────────────────────────────────────────────────────
+// OpenRouter & Local: direct browser calls (CORS-friendly, no timeout limit)
+// Gemini: proxied through /api/analyze & /api/embeddings (CORS blocks direct calls)
 
 import type { Provider } from "./store";
 
@@ -24,12 +24,50 @@ export async function callLLM(
     return callLocal(messages, system, model);
   } else if (provider === "gemini") {
     if (!apiKey?.trim()) throw new Error("No API key provided");
-    return callGemini(messages, system, apiKey, model);
+    return callGeminiProxy(messages, system, apiKey, model);
   } else {
     if (!apiKey?.trim()) throw new Error("No API key provided");
     return callOpenRouter(messages, system, apiKey, model);
   }
 }
+
+// ── Gemini via serverless proxy (CORS workaround) ───────────────────────────
+
+async function callGeminiProxy(
+  messages: { role: string; content: string }[],
+  system: string,
+  apiKey: string,
+  model: string
+): Promise<LLMResult> {
+  const resp = await fetch("/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages,
+      system,
+      apiKey,
+      provider: "gemini",
+      model: model || "gemini-2.5-flash",
+    }),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: resp.statusText }));
+    throw new Error(err.error || `HTTP ${resp.status}`);
+  }
+
+  const data = await resp.json();
+  return {
+    content: data.content || "",
+    usage: {
+      prompt_tokens: data.usage?.prompt_tokens ?? 0,
+      completion_tokens: data.usage?.completion_tokens ?? 0,
+      total_tokens: data.usage?.total_tokens ?? 0,
+    },
+  };
+}
+
+// ── Local LLM (direct — same machine, no CORS) ─────────────────────────────
 
 async function callLocal(
   messages: { role: string; content: string }[],
@@ -78,6 +116,8 @@ async function callLocal(
     throw err;
   }
 }
+
+// ── OpenRouter (direct — supports CORS) ─────────────────────────────────────
 
 async function callOpenRouter(
   messages: { role: string; content: string }[],
@@ -157,62 +197,7 @@ async function callOpenRouter(
   throw new Error("Rate limited after retries. Please wait a moment and try again.");
 }
 
-async function callGemini(
-  messages: { role: string; content: string }[],
-  system: string,
-  apiKey: string,
-  model: string
-): Promise<LLMResult> {
-  const geminiModel = model || "gemini-2.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
-
-  const contents = [];
-  if (system) {
-    contents.push({ role: "user", parts: [{ text: "INSTRUCTIONS:\n" + system }] });
-    contents.push({ role: "model", parts: [{ text: "Understood. Returning only valid JSON." }] });
-  }
-  for (const m of messages) {
-    contents.push({
-      role: m.role === "user" ? "user" : "model",
-      parts: [{ text: m.content }],
-    });
-  }
-
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents,
-        generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
-      }),
-    });
-    if (resp.status === 429) {
-      await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 20000));
-      continue;
-    }
-    if (!resp.ok) {
-      const text = await resp.text();
-      throw new Error(`Gemini ${resp.status}: ${text.slice(0, 300)}`);
-    }
-    const data = await resp.json();
-    const parts = data.candidates?.[0]?.content?.parts;
-    if (!parts?.length) throw new Error("Gemini returned empty response");
-    return {
-      content: parts[0].text ?? "",
-      usage: {
-        prompt_tokens: data.usageMetadata?.promptTokenCount ?? 0,
-        completion_tokens: data.usageMetadata?.candidatesTokenCount ?? 0,
-        total_tokens: data.usageMetadata?.totalTokenCount ?? 0,
-      },
-    };
-  }
-  throw new Error("Gemini rate limited. Try gemini-2.5-flash-lite or OpenRouter.");
-}
-
-// ── Gemini Embeddings (direct from browser) ─────────────────────────────────
-
-const EMBED_BATCH_SIZE = 50;
+// ── Gemini Embeddings (proxied through /api/embeddings) ─────────────────────
 
 export async function callEmbeddings(
   texts: string[],
@@ -223,55 +208,22 @@ export async function callEmbeddings(
   if (!apiKey?.trim()) throw new Error("No API key provided. Add your Gemini key in Config.");
   if (!texts?.length) throw new Error("No texts provided");
 
-  const embeddingModel = model || "text-embedding-004";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${embeddingModel}:batchEmbedContents?key=${apiKey}`;
+  const resp = await fetch("/api/embeddings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      texts,
+      apiKey,
+      taskType,
+      model: model || "text-embedding-004",
+    }),
+  });
 
-  const requests = texts.map((text) => ({
-    model: `models/${embeddingModel}`,
-    content: { parts: [{ text }] },
-    taskType,
-    outputDimensionality: 768,
-  }));
-
-  const allEmbeddings: number[][] = [];
-
-  for (let i = 0; i < requests.length; i += EMBED_BATCH_SIZE) {
-    const batch = requests.slice(i, i + EMBED_BATCH_SIZE);
-
-    let resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requests: batch }),
-      signal: AbortSignal.timeout(60000),
-    });
-
-    if (resp.status === 429) {
-      await new Promise((r) => setTimeout(r, 3000));
-      resp = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requests: batch }),
-        signal: AbortSignal.timeout(60000),
-      });
-    }
-
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => "Unknown error");
-      if (resp.status === 404) {
-        throw new Error(`Embedding model "${embeddingModel}" not found. Check your API key supports the Gemini Embedding API.`);
-      }
-      throw new Error(`Gemini Embedding ${resp.status}: ${errText.slice(0, 300)}`);
-    }
-
-    const data = await resp.json();
-    if (!data.embeddings?.length) {
-      throw new Error("Gemini returned empty embeddings response");
-    }
-
-    for (const emb of data.embeddings) {
-      allEmbeddings.push(emb.values);
-    }
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: resp.statusText }));
+    throw new Error(err.error || `Embedding failed: ${resp.status}`);
   }
 
-  return allEmbeddings;
+  const data = await resp.json();
+  return data.embeddings;
 }
