@@ -215,7 +215,7 @@ export async function callEmbeddings(
       texts,
       apiKey,
       taskType,
-      model: model || "text-embedding-004",
+      model: model || "gemini-embedding-001",
     }),
   });
 
