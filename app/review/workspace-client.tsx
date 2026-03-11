@@ -8,7 +8,7 @@ import {
   ChevronRight, ChevronLeft, Check, X, AlertTriangle, Info, AlertCircle,
   Upload, Eye, Code, GitBranch, Link, Sparkles, Search, Rocket, Activity, ArrowUp, ArrowDown, Timer,
   FileCode2, FileJson, FileText, FileType, Hash, Gem, Terminal, Globe, Palette, Cpu, Pencil,
-  PanelLeftClose, PanelLeft, Sun, Moon, Laptop,
+  PanelLeftClose, PanelLeft, Sun, Moon, Laptop, Trash2, ShieldCheck, EyeOff,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
@@ -1403,6 +1403,8 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                             {store.config.provider === "openrouter"
                               ? "openrouter.ai/keys — free account includes ⭐ models"
                               : "aistudio.google.com/apikey"}
+                            {" · "}
+                            <span className="text-ghost/60">stored in this tab only, never sent to our servers</span>
                           </p>
                         </div>
                         <div>
@@ -1503,8 +1505,53 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                   </div>
                 </div>
 
+                {/* Privacy & Security */}
+                <div className="rounded-xl border border-border bg-card overflow-hidden">
+                  <div className="px-4 py-3 border-b border-border bg-surface/50">
+                    <p className="text-[11px] font-700 text-dim uppercase tracking-widest flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5" /> Privacy &amp; Security
+                    </p>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div className="text-[11px] text-dim space-y-1.5 leading-relaxed">
+                      <p>Your API key is stored in <span className="text-ghost font-600">this browser tab only</span> (sessionStorage). It is never saved to any server, database, or shared with other users.</p>
+                      <p>Closing this tab automatically clears your key. Your uploaded code and review settings persist in localStorage until you clear them.</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          store.setConfig({ apiKey: "", embeddingApiKey: "" });
+                          sessionStorage.removeItem("ca_api_key");
+                          showToast("API keys cleared", "ok");
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-2 text-xs font-600 text-ghost bg-surface border border-border rounded-lg hover:border-azure/50 transition-colors"
+                      >
+                        <EyeOff className="w-3.5 h-3.5" /> Clear Keys
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm("This will clear ALL data — API keys, uploaded files, findings, and settings. Continue?")) {
+                            store.clearSession();
+                            showToast("Session cleared", "ok");
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-2 text-xs font-600 text-rose bg-surface border border-rose/25 rounded-lg hover:bg-rose/10 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Clear All Data
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 <button
-                  onClick={() => { showToast("Config saved!", "ok"); }}
+                  onClick={() => {
+                    // Actually save API key to sessionStorage
+                    if (store.config.apiKey) {
+                      sessionStorage.setItem("ca_api_key", store.config.apiKey);
+                      sessionStorage.setItem("ca_provider", store.config.provider);
+                    }
+                    showToast("Config saved!", "ok");
+                  }}
                   className="px-5 py-2.5 bg-azure text-white text-sm font-600 font-display rounded-lg hover:bg-azure/90 transition-colors"
                 >
                   Save

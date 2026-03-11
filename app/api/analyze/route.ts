@@ -36,7 +36,11 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    // Sanitize any accidental key leakage in error messages
+    const safeMsg = msg.replace(/key=[^&\s"]+/gi, "key=[REDACTED]")
+                       .replace(/AIza[a-zA-Z0-9_-]+/g, "AIza[REDACTED]")
+                       .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "sk-or-v1-[REDACTED]");
+    return NextResponse.json({ error: safeMsg }, { status: 500 });
   }
 }
 
@@ -175,7 +179,11 @@ async function callGemini(
   model: string
 ): Promise<AIResult> {
   const geminiModel = model || "gemini-2.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
+  // Validate model name to prevent URL injection
+  if (!/^[a-zA-Z0-9._:/-]+$/.test(geminiModel)) {
+    throw new Error("Invalid model name");
+  }
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`;
 
   const contents = [];
   if (system) {
@@ -192,7 +200,10 @@ async function callGemini(
   for (let attempt = 0; attempt < 5; attempt++) {
     const resp = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
       body: JSON.stringify({
         contents,
         generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
@@ -204,7 +215,9 @@ async function callGemini(
     }
     if (!resp.ok) {
       const text = await resp.text();
-      throw new Error(`Gemini ${resp.status}: ${text.slice(0, 300)}`);
+      // Sanitize error to avoid leaking API key fragments
+      const safeErr = text.slice(0, 300).replace(/key=[^&\s"]+/gi, "key=[REDACTED]");
+      throw new Error(`Gemini ${resp.status}: ${safeErr}`);
     }
     const data = await resp.json();
     const parts = data.candidates?.[0]?.content?.parts;

@@ -146,6 +146,9 @@ interface AppState {
   setSearchQuery: (query: string) => void;
   setSearchResults: (results: SearchResult[]) => void;
   setSearchLoading: (loading: boolean) => void;
+
+  // Session
+  clearSession: () => void;
 }
 
 export const useStore = create<AppState>()(
@@ -293,13 +296,43 @@ export const useStore = create<AppState>()(
   setSearchQuery: (query) => set({ searchQuery: query }),
   setSearchResults: (results) => set({ searchResults: results }),
   setSearchLoading: (loading) => set({ searchLoading: loading }),
+
+  // Clear everything — API keys, files, findings, embeddings
+  clearSession: () => {
+    sessionStorage.removeItem("ca_api_key");
+    sessionStorage.removeItem("ca_provider");
+    set({
+      config: {
+        apiKey: "",
+        embeddingApiKey: "",
+        provider: "openrouter",
+        model: "qwen/qwen3-coder:free",
+        aggression: "balanced",
+        autoApproveInfo: false,
+        focus: ["bugs", "security", "performance", "quality"],
+      },
+      files: {},
+      selectedFile: null,
+      findings: {},
+      timeline: [],
+      stats: { approved: 0, rejected: 0, pending: 0 },
+      embeddedChunks: [],
+      embeddingStatus: "idle" as const,
+      embeddingProgress: "",
+      searchResults: [],
+      searchQuery: "",
+      projectName: "Untitled Project",
+      activeView: "files" as const,
+    });
+  },
     }),
     {
       name: "codeagent-store",
       partialize: (state) => ({
         files: state.files,
         findings: state.findings,
-        config: state.config,
+        // Persist config WITHOUT API keys — keys stay in sessionStorage only
+        config: { ...state.config, apiKey: "", embeddingApiKey: "" },
         timeline: state.timeline,
         projectName: state.projectName,
         selectedMode: state.selectedMode,

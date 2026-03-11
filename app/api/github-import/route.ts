@@ -110,6 +110,10 @@ export async function POST(req: NextRequest) {
     }
 
     const { owner, repo, branch } = parsed;
+    // Validate owner/repo to prevent URL injection
+    if (!/^[a-zA-Z0-9._-]+$/.test(owner) || !/^[a-zA-Z0-9._-]+$/.test(repo)) {
+      return NextResponse.json({ error: "Invalid repository owner or name" }, { status: 400 });
+    }
     const headers: Record<string, string> = {
       Accept: "application/vnd.github.v3+json",
       "User-Agent": "CodeAgent/1.0",
@@ -118,7 +122,7 @@ export async function POST(req: NextRequest) {
     // Step 1: Get the default branch if not specified
     let targetBranch = branch;
     if (!targetBranch) {
-      const repoResp = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+      const repoResp = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, { headers });
       if (repoResp.status === 404) {
         return NextResponse.json(
           { error: `Repository ${owner}/${repo} not found. Make sure it's a public repo.` },
@@ -136,8 +140,12 @@ export async function POST(req: NextRequest) {
     }
 
     // Step 2: Get the full file tree recursively (single API call)
+    // Validate branch name
+    if (!targetBranch || !/^[a-zA-Z0-9._\/-]+$/.test(targetBranch)) {
+      return NextResponse.json({ error: "Invalid branch name" }, { status: 400 });
+    }
     const treeResp = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/git/trees/${targetBranch}?recursive=1`,
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(targetBranch)}?recursive=1`,
       { headers }
     );
 
@@ -172,7 +180,7 @@ export async function POST(req: NextRequest) {
       const results = await Promise.allSettled(
         batch.map(async (item) => {
           const resp = await fetch(
-            `https://api.github.com/repos/${owner}/${repo}/contents/${item.path}?ref=${targetBranch}`,
+            `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${item.path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(targetBranch)}`,
             { headers }
           );
           if (!resp.ok) return null;

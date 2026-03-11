@@ -21,7 +21,11 @@ export async function POST(req: NextRequest) {
     }
 
     const embeddingModel = model || "gemini-embedding-001";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${embeddingModel}:batchEmbedContents?key=${apiKey}`;
+    // Validate model name to prevent URL injection
+    if (!/^[a-zA-Z0-9._:/-]+$/.test(embeddingModel)) {
+      return NextResponse.json({ error: "Invalid model name" }, { status: 400 });
+    }
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(embeddingModel)}:batchEmbedContents`;
 
     const requests = texts.map((text: string) => ({
       model: `models/${embeddingModel}`,
@@ -32,13 +36,17 @@ export async function POST(req: NextRequest) {
 
     // Batch in groups of 50 to stay within API limits
     const allEmbeddings: number[][] = [];
+    const fetchHeaders = {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    };
 
     for (let i = 0; i < requests.length; i += 50) {
       const batch = requests.slice(i, i + 50);
 
       let resp = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: fetchHeaders,
         body: JSON.stringify({ requests: batch }),
         signal: AbortSignal.timeout(25000),
       });
@@ -48,7 +56,7 @@ export async function POST(req: NextRequest) {
         await new Promise((r) => setTimeout(r, 3000));
         resp = await fetch(url, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: fetchHeaders,
           body: JSON.stringify({ requests: batch }),
           signal: AbortSignal.timeout(25000),
         });
@@ -62,8 +70,10 @@ export async function POST(req: NextRequest) {
             { status: 404 }
           );
         }
+        // Sanitize error to avoid leaking API key fragments
+        const safeErr = errText.slice(0, 300).replace(/key=[^&\s"]+/gi, "key=[REDACTED]");
         return NextResponse.json(
-          { error: `Gemini Embedding ${resp.status}: ${errText.slice(0, 300)}` },
+          { error: `Gemini Embedding ${resp.status}: ${safeErr}` },
           { status: resp.status }
         );
       }
@@ -88,6 +98,9 @@ export async function POST(req: NextRequest) {
     if (msg.includes("AbortError") || msg.includes("timeout")) {
       return NextResponse.json({ error: "Embedding request timed out. Try with fewer files." }, { status: 504 });
     }
-    return NextResponse.json({ error: msg }, { status: 500 });
+    // Sanitize any accidental key leakage
+    const safeMsg = msg.replace(/key=[^&\s"]+/gi, "key=[REDACTED]")
+                       .replace(/AIza[a-zA-Z0-9_-]+/g, "AIza[REDACTED]");
+    return NextResponse.json({ error: safeMsg }, { status: 500 });
   }
 }
