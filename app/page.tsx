@@ -1,12 +1,19 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Zap, Shield, Rocket, GitBranch, ArrowRight, Sparkles, CheckCircle, Search, Layers } from "lucide-react";
+import { Zap, Shield, Rocket, GitBranch, ArrowRight, CheckCircle, Search, Layers, Upload, Clock, Code } from "lucide-react";
+
+const STEPS = [
+  { icon: Upload, label: "Upload", desc: "Drop files or paste a GitHub URL" },
+  { icon: Code, label: "Analyze", desc: "AI scans for bugs, security issues, and performance" },
+  { icon: CheckCircle, label: "Review", desc: "Approve or skip each suggested fix" },
+  { icon: Rocket, label: "Ship", desc: "Download your improved codebase" },
+];
 
 const FEATURES = [
   { icon: Shield, label: "Bug Detection", desc: "Catch logic errors, null refs, and edge cases before they hit production", accent: "text-rose" },
-  { icon: Zap, label: "Performance", desc: "Identify bottlenecks, O(n²) loops, and unnecessary re-renders instantly", accent: "text-amber" },
+  { icon: Zap, label: "Performance", desc: "Identify bottlenecks, O(n\u00B2) loops, and unnecessary re-renders instantly", accent: "text-amber" },
   { icon: Rocket, label: "Optimization", desc: "Refactor to idiomatic patterns, reduce complexity, improve readability", accent: "text-emerald" },
   { icon: GitBranch, label: "Security", desc: "Spot injection vulnerabilities, insecure deps, and auth flaws", accent: "text-violet" },
 ];
@@ -17,11 +24,6 @@ const MODES = [
   { icon: Layers, name: "Pipeline", desc: "Full review + optimize in one pass", accent: "emerald", bg: "bg-emerald/8", border: "border-emerald/15" },
 ];
 
-const MODELS = [
-  "DeepSeek R1", "Claude Sonnet", "GPT-4o", "Gemini 2.5 Pro",
-  "Llama 4", "Qwen3 235B", "Mistral", "Phi-4"
-];
-
 const CODE_SAMPLE = `// Before CodeAgent
 function getUserData(id) {
   const user = db.query("SELECT * FROM users WHERE id = " + id)
@@ -30,9 +32,9 @@ function getUserData(id) {
 
 // After CodeAgent
 async function getUserData(id: string): Promise<User> {
-  // ✓ Parameterized query (SQL injection fix)
-  // ✓ Added type safety
-  // ✓ Async/await pattern
+  // \u2713 Parameterized query (SQL injection fix)
+  // \u2713 Added type safety
+  // \u2713 Async/await pattern
   const user = await db.query(
     "SELECT * FROM users WHERE id = $1",
     [id]
@@ -42,14 +44,8 @@ async function getUserData(id: string): Promise<User> {
 
 export default function LandingPage() {
   const router = useRouter();
-  const [modelIdx, setModelIdx] = useState(0);
   const [apiKey, setApiKey] = useState("");
   const [showInput, setShowInput] = useState(false);
-
-  useEffect(() => {
-    const t = setInterval(() => setModelIdx(i => (i + 1) % MODELS.length), 2000);
-    return () => clearInterval(t);
-  }, []);
 
   const handleLaunch = () => {
     if (apiKey.trim()) {
@@ -61,17 +57,10 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-void relative overflow-x-hidden">
-      {/* Ambient background — subtle, not neon */}
+      {/* Ambient background */}
       <div className="fixed inset-0 pointer-events-none" aria-hidden="true">
         <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-azure/4 blur-[140px]" />
         <div className="absolute top-[10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-violet/4 blur-[140px]" />
-        <div
-          className="absolute inset-0 opacity-[0.025]"
-          style={{
-            backgroundImage: `radial-gradient(circle at 1px 1px, rgba(255,255,255,0.35) 1px, transparent 0)`,
-            backgroundSize: "40px 40px",
-          }}
-        />
       </div>
 
       {/* Nav */}
@@ -113,42 +102,31 @@ export default function LandingPage() {
         </motion.div>
       </nav>
 
-      {/* Hero */}
+      {/* Hero — Lead with the problem */}
       <main className="relative z-10 max-w-7xl mx-auto px-6 pt-16 pb-24">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
-          className="text-center max-w-4xl mx-auto"
+          className="text-center max-w-3xl mx-auto"
         >
-          {/* Badge */}
-          <div className="inline-flex items-center gap-2 bg-card border border-border text-ghost text-xs font-medium px-3 py-1.5 rounded-full mb-6">
-            <Sparkles className="w-3 h-3 text-azure" />
-            Powered by{" "}
-            <motion.span
-              key={modelIdx}
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 6 }}
-              transition={{ duration: 0.25 }}
-              className="font-mono text-text"
-            >
-              {MODELS[modelIdx]}
-            </motion.span>
-            <span className="text-dim">& more</span>
-          </div>
-
-          {/* Headline — solid text, no gradient */}
-          <h1 className="font-display text-6xl md:text-7xl font-800 leading-[0.95] tracking-tight mb-6">
-            <span className="text-text">Code review</span>
-            <br />
-            <span className="text-azure">reimagined</span>
+          <h1 className="font-display text-5xl md:text-6xl font-800 leading-[1] tracking-tight mb-6 text-text">
+            Code reviews that<br />
+            <span className="text-azure">actually fix things</span>
           </h1>
 
-          <p className="text-lg text-ghost max-w-xl mx-auto leading-relaxed mb-10">
-            Upload your codebase. Get structured AI findings. Apply fixes with one click.
-            Works with OpenRouter, Gemini, or your own local LLM via LM Studio.
+          <p className="text-lg text-ghost max-w-xl mx-auto leading-relaxed mb-4">
+            Manual code reviews miss bugs, take hours, and rarely produce actionable fixes.
+            CodeAgent scans your code with AI and generates one-click patches you can apply instantly.
           </p>
+
+          <div className="flex items-center justify-center gap-4 text-xs text-dim mb-10">
+            <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> 30 seconds per file</span>
+            <span className="w-1 h-1 rounded-full bg-dim" />
+            <span>Works with 20+ LLMs</span>
+            <span className="w-1 h-1 rounded-full bg-dim" />
+            <span>No account needed</span>
+          </div>
 
           {/* CTA */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -157,17 +135,17 @@ export default function LandingPage() {
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => setShowInput(true)}
+                  onClick={() => router.push("/review")}
                   className="flex items-center gap-2 px-6 py-3 rounded-xl font-display font-600 text-white bg-azure text-sm hover:bg-azure/90 transition-colors duration-150 min-h-[48px]"
                 >
                   <Zap className="w-4 h-4" />
-                  Start with API Key
+                  Start reviewing code
                 </motion.button>
                 <button
-                  onClick={() => router.push("/review")}
+                  onClick={() => setShowInput(true)}
                   className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium text-ghost hover:text-soft border border-border hover:border-muted transition-colors duration-150 min-h-[48px]"
                 >
-                  Try without key <ArrowRight className="w-3.5 h-3.5" />
+                  I have an API key <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </>
             ) : (
@@ -198,7 +176,7 @@ export default function LandingPage() {
           </div>
 
           <p className="mt-4 text-xs text-dim">
-            Keys stored in session only · Never sent to our servers · OpenRouter free tier works
+            Free with OpenRouter · Keys stored in-browser only · Self-hostable · MIT License
           </p>
         </motion.div>
 
@@ -209,8 +187,7 @@ export default function LandingPage() {
           transition={{ delay: 0.15, duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
           className="mt-16 max-w-3xl mx-auto"
         >
-          <div className="rounded-2xl overflow-hidden border border-border bg-card/80 shadow-2xl shadow-black/40">
-            {/* Window chrome */}
+          <div className="rounded-2xl overflow-hidden border border-border bg-card shadow-2xl shadow-black/40">
             <div className="flex items-center gap-2 px-4 py-3 bg-surface/60 border-b border-border">
               <div className="w-3 h-3 rounded-full bg-rose/50" aria-hidden="true" />
               <div className="w-3 h-3 rounded-full bg-amber/50" aria-hidden="true" />
@@ -227,11 +204,39 @@ export default function LandingPage() {
           </div>
         </motion.div>
 
-        {/* Features — varied accent colors per feature, no glass */}
+        {/* How it works — step-by-step flow */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.25, duration: 0.5 }}
+          className="mt-24 max-w-3xl mx-auto"
+        >
+          <h2 className="font-display text-2xl font-700 text-text text-center mb-10">How it works</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {STEPS.map((step, i) => (
+              <motion.div
+                key={step.label}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 + i * 0.06 }}
+                className="text-center"
+              >
+                <div className="w-12 h-12 rounded-xl bg-card border border-border flex items-center justify-center mx-auto mb-3 relative">
+                  <step.icon className="w-5 h-5 text-azure" />
+                  <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-azure text-white text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
+                </div>
+                <div className="font-display font-600 text-sm text-text mb-1">{step.label}</div>
+                <div className="text-xs text-ghost">{step.desc}</div>
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* What it catches */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35, duration: 0.5 }}
           className="mt-24 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-5xl mx-auto"
         >
           {FEATURES.map((f, i) => (
@@ -239,10 +244,10 @@ export default function LandingPage() {
               key={f.label}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 + i * 0.06 }}
+              transition={{ delay: 0.4 + i * 0.06 }}
               className="rounded-xl p-5 bg-card border border-border group hover:border-muted transition-colors duration-200 cursor-default"
             >
-              <div className={`w-9 h-9 rounded-lg bg-surface border border-border flex items-center justify-center mb-3 group-hover:border-muted transition-colors duration-200`}>
+              <div className="w-9 h-9 rounded-lg bg-surface border border-border flex items-center justify-center mb-3 group-hover:border-muted transition-colors duration-200">
                 <f.icon className={`w-4 h-4 ${f.accent}`} />
               </div>
               <div className="font-display font-600 text-sm text-text mb-1">{f.label}</div>
@@ -251,24 +256,24 @@ export default function LandingPage() {
           ))}
         </motion.div>
 
-        {/* Three modes — SVG icons instead of emoji */}
+        {/* Three modes */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
+          transition={{ delay: 0.45 }}
           className="mt-24 text-center max-w-3xl mx-auto"
         >
-          <h2 className="font-display text-3xl font-700 text-text mb-3">Three modes. One workflow.</h2>
-          <p className="text-ghost text-sm mb-10">Pick the depth you need — from a quick review to a full refactor pipeline.</p>
+          <h2 className="font-display text-2xl font-700 text-text mb-3">Three analysis modes</h2>
+          <p className="text-ghost text-sm mb-10">Pick the depth you need — from a quick scan to a full refactor pipeline.</p>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {MODES.map((m, i) => (
               <motion.div
                 key={m.name}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.45 + i * 0.06 }}
-                className={`rounded-xl p-5 text-center group cursor-default border ${m.border} ${m.bg} hover:border-muted transition-colors duration-200`}
+                transition={{ delay: 0.5 + i * 0.06 }}
+                className={`rounded-xl p-5 text-center cursor-default border ${m.border} ${m.bg} hover:border-muted transition-colors duration-200`}
               >
                 <div className={`w-10 h-10 rounded-xl border ${m.border} ${m.bg} flex items-center justify-center mx-auto mb-3`}>
                   <m.icon className={`w-5 h-5 text-${m.accent}`} />
@@ -284,16 +289,16 @@ export default function LandingPage() {
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.55 }}
+          transition={{ delay: 0.6 }}
           className="mt-24 text-center"
         >
           <button
             onClick={() => router.push("/review")}
-            className="inline-flex items-center gap-2 font-display font-600 text-sm text-ghost hover:text-soft transition-colors duration-150 min-h-[44px]"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-display font-600 text-sm text-white bg-azure hover:bg-azure/90 transition-colors duration-150 min-h-[48px]"
           >
-            Open workspace <ArrowRight className="w-4 h-4" />
+            Start reviewing code <ArrowRight className="w-4 h-4" />
           </button>
-          <p className="mt-3 text-xs text-dim">No account needed · Self-hostable · MIT License</p>
+          <p className="mt-4 text-xs text-dim">No account needed · Self-hostable · MIT License</p>
         </motion.div>
       </main>
     </div>

@@ -5,9 +5,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useDropzone } from "react-dropzone";
 import {
   Zap, Files, Bot, Clock, Settings, Play, Square, Download, Monitor, RefreshCw, Wifi, WifiOff,
-  ChevronRight, Check, X, AlertTriangle, Info, AlertCircle,
+  ChevronRight, ChevronLeft, Check, X, AlertTriangle, Info, AlertCircle,
   Upload, Eye, Code, GitBranch, Link, Sparkles, Search, Rocket, Activity, ArrowUp, ArrowDown, Timer,
   FileCode2, FileJson, FileText, FileType, Hash, Gem, Terminal, Globe, Palette, Cpu, Pencil,
+  PanelLeftClose, PanelLeft, Sun, Moon, Laptop,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
@@ -272,6 +273,19 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
   const [showTokenDialog, setShowTokenDialog] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+
+  // Theme effect — apply class to html element
+  useEffect(() => {
+    const root = document.documentElement;
+    if (store.theme === "system") {
+      const mq = window.matchMedia("(prefers-color-scheme: light)");
+      root.classList.toggle("light", mq.matches);
+      const handler = (e: MediaQueryListEvent) => root.classList.toggle("light", e.matches);
+      mq.addEventListener("change", handler);
+      return () => mq.removeEventListener("change", handler);
+    }
+    root.classList.toggle("light", store.theme === "light");
+  }, [store.theme]);
 
   // Load API key from session
   useEffect(() => {
@@ -551,7 +565,26 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
           </button>
         )}
 
+        {/* Sidebar toggle */}
+        <button
+          onClick={() => store.setSidebarOpen(!store.sidebarOpen)}
+          aria-label={store.sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+          className="p-2 rounded-lg hover:bg-card text-ghost hover:text-text transition-colors duration-150 min-w-[36px] min-h-[36px] flex items-center justify-center"
+        >
+          {store.sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
+        </button>
+
         <div className="flex-1" />
+
+        {/* Theme toggle */}
+        <button
+          onClick={() => store.setTheme(store.theme === "dark" ? "light" : store.theme === "light" ? "system" : "dark")}
+          aria-label={`Theme: ${store.theme}. Click to change.`}
+          className="p-2 rounded-lg hover:bg-card text-ghost hover:text-text transition-colors duration-150 min-w-[36px] min-h-[36px] flex items-center justify-center"
+          title={`Theme: ${store.theme}`}
+        >
+          {store.theme === "dark" ? <Moon className="w-4 h-4" /> : store.theme === "light" ? <Sun className="w-4 h-4" /> : <Laptop className="w-4 h-4" />}
+        </button>
 
         {/* Status */}
         {store.agentRunning && (
@@ -681,7 +714,7 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
       {/* Body */}
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-56 flex-shrink-0 bg-ink border-r border-border flex flex-col" aria-label="Agent controls">
+        <aside className={`flex-shrink-0 bg-ink border-r border-border flex flex-col transition-all duration-200 overflow-hidden ${store.sidebarOpen ? "w-56" : "w-0 border-r-0"}`} aria-label="Agent controls">
           {/* Nav */}
           <nav className="p-2 space-y-0.5" aria-label="Main navigation">
             {navItems.map((item) => (
@@ -865,122 +898,188 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
         <main className="flex-1 overflow-hidden flex flex-col" aria-label="Workspace content">
           {/* FILES view */}
           {store.activeView === "files" && (
-            <div className="flex-1 flex overflow-hidden">
-              {/* File tree */}
-              <div className="w-56 flex-shrink-0 border-r border-border flex flex-col bg-surface/50">
-                <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
-                  <span className="text-[10px] font-700 text-dim uppercase tracking-widest">Files</span>
-                  {fileList.length > 0 && (
-                    <button
-                      onClick={() => { store.clearFiles(); showToast("Files cleared"); }}
-                      className="text-[10px] text-dim hover:text-rose transition-colors"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-
-                {/* Drop zone */}
-                {/* GitHub Import */}
-                <div className="mx-2 mt-2">
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <GitBranch className="w-3 h-3 text-dim" />
-                    <span className="text-[10px] font-600 text-dim uppercase tracking-wider">Import from GitHub</span>
+            fileList.length === 0 ? (
+              /* ── Onboarding / Upload Zone ── */
+              <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
+                <div className="max-w-xl w-full">
+                  {/* Step indicator */}
+                  <div className="flex items-center justify-center gap-1 mb-10">
+                    {[
+                      { num: 1, label: "Upload", active: true },
+                      { num: 2, label: "Configure", active: false },
+                      { num: 3, label: "Analyze", active: false },
+                      { num: 4, label: "Review", active: false },
+                    ].map((step, i) => (
+                      <div key={step.num} className="flex items-center gap-1">
+                        <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium ${
+                          step.active
+                            ? "bg-azure/15 text-azure border border-azure/25"
+                            : "bg-card text-dim border border-border"
+                        }`}>
+                          <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                            step.active ? "bg-azure text-white" : "bg-muted text-dim"
+                          }`}>{step.num}</span>
+                          {step.label}
+                        </div>
+                        {i < 3 && <div className="w-6 h-px bg-border" />}
+                      </div>
+                    ))}
                   </div>
-                  <div className="flex gap-1">
-                    <input
-                      type="text"
-                      value={ghUrl}
-                      onChange={e => setGhUrl(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && handleGitHubImport()}
-                      placeholder="github.com/user/repo"
-                      className="flex-1 min-w-0 bg-surface border border-border rounded-md px-2 py-1.5 text-[11px] font-mono text-text placeholder:text-dim outline-none focus:border-azure/50"
-                    />
+
+                  {/* Big upload dropzone */}
+                  <label className="block rounded-2xl border-2 border-dashed border-border bg-card/40 p-12 text-center cursor-pointer hover:border-azure/40 hover:bg-azure/3 transition-colors duration-200 group">
+                    <div className="w-16 h-16 rounded-2xl bg-surface border border-border flex items-center justify-center mx-auto mb-5 group-hover:border-azure/30 transition-colors">
+                      <Upload className="w-8 h-8 text-ghost group-hover:text-azure transition-colors" />
+                    </div>
+                    <h2 className="font-display text-xl font-700 text-text mb-2">Drop your code here</h2>
+                    <p className="text-sm text-ghost mb-1">or click to browse files</p>
+                    <p className="text-xs text-dim">Supports .ts, .tsx, .js, .py, .go, .rs, .java, .json and more</p>
+                    <input type="file" multiple className="hidden" onChange={(e) => {
+                      if (e.target.files) onDrop(Array.from(e.target.files));
+                    }} />
+                  </label>
+
+                  {/* Divider */}
+                  <div className="flex items-center gap-3 my-5">
+                    <div className="flex-1 h-px bg-border" />
+                    <span className="text-xs text-dim font-medium">or import from GitHub</span>
+                    <div className="flex-1 h-px bg-border" />
+                  </div>
+
+                  {/* GitHub import */}
+                  <div className="flex gap-2">
+                    <div className="flex-1 flex items-center gap-2 bg-surface border border-border rounded-xl px-3 py-2.5 focus-within:border-azure/50 transition-colors">
+                      <GitBranch className="w-4 h-4 text-dim flex-shrink-0" />
+                      <input
+                        type="text"
+                        value={ghUrl}
+                        onChange={e => setGhUrl(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && handleGitHubImport()}
+                        placeholder="github.com/user/repo"
+                        className="flex-1 bg-transparent text-sm font-mono text-text placeholder:text-dim outline-none"
+                      />
+                    </div>
                     <button
                       onClick={handleGitHubImport}
                       disabled={ghLoading || !ghUrl.trim()}
-                      className="px-2 py-1.5 rounded-md bg-azure/10 border border-azure/20 text-azure text-[10px] font-600 hover:bg-azure/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-azure text-white text-sm font-600 hover:bg-azure/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150 min-h-[44px]"
                     >
-                      {ghLoading ? "Loading..." : "Import"}
+                      {ghLoading ? (
+                        <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Importing...</>
+                      ) : (
+                        <><Download className="w-3.5 h-3.5" /> Import</>
+                      )}
                     </button>
+                  </div>
+
+                  {/* Quick tip */}
+                  <div className="mt-8 text-center">
+                    <p className="text-xs text-dim">
+                      After uploading, configure the analysis mode in the sidebar, then hit <span className="text-ghost font-medium">Run Agent</span>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* ── Normal Files View (with files loaded) ── */
+              <div className="flex-1 flex overflow-hidden">
+                {/* File tree */}
+                <div className="w-56 flex-shrink-0 border-r border-border flex flex-col bg-surface/50">
+                  <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
+                    <span className="text-[10px] font-700 text-dim uppercase tracking-widest">Files ({fileList.length})</span>
+                    <div className="flex items-center gap-2">
+                      <label className="text-[10px] text-dim hover:text-azure transition-colors cursor-pointer">
+                        + Add
+                        <input type="file" multiple className="hidden" onChange={(e) => {
+                          if (e.target.files) onDrop(Array.from(e.target.files));
+                        }} />
+                      </label>
+                      <button
+                        onClick={() => { store.clearFiles(); showToast("Files cleared"); }}
+                        className="text-[10px] text-dim hover:text-rose transition-colors"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* GitHub Import (compact) */}
+                  <div className="mx-2 mt-2 mb-1">
+                    <div className="flex gap-1">
+                      <input
+                        type="text"
+                        value={ghUrl}
+                        onChange={e => setGhUrl(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && handleGitHubImport()}
+                        placeholder="github.com/user/repo"
+                        className="flex-1 min-w-0 bg-surface border border-border rounded-md px-2 py-1.5 text-[11px] font-mono text-text placeholder:text-dim outline-none focus:border-azure/50"
+                      />
+                      <button
+                        onClick={handleGitHubImport}
+                        disabled={ghLoading || !ghUrl.trim()}
+                        className="px-2 py-1.5 rounded-md bg-azure/10 border border-azure/20 text-azure text-[10px] font-600 hover:bg-azure/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                      >
+                        {ghLoading ? "..." : "Import"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* File list */}
+                  <div className="flex-1 overflow-y-auto py-1">
+                    {fileList.map((f) => (
+                      <button
+                        key={f.path}
+                        onClick={() => store.selectFile(f.path)}
+                        aria-label={`View ${f.path} (${fmtSize(f.size)})`}
+                        aria-current={store.selectedFile === f.path ? "true" : undefined}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors duration-150 min-h-[36px] ${
+                          store.selectedFile === f.path
+                            ? "bg-azure/10 text-azure"
+                            : "text-ghost hover:bg-card hover:text-soft"
+                        }`}
+                      >
+                        <FileIcon path={f.path} className="w-3.5 h-3.5" />
+                        <span className="flex-1 text-[11px] font-mono truncate">{f.path}</span>
+                        <span className="text-[10px] text-dim">{fmtSize(f.size)}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                <div className="mx-2 my-1.5 flex items-center gap-2">
-                  <div className="flex-1 h-px bg-border" />
-                  <span className="text-[9px] text-dim">OR</span>
-                  <div className="flex-1 h-px bg-border" />
-                </div>
-
-                                <label className="mx-2 mt-2 mb-1 flex flex-col items-center justify-center gap-1.5 border border-dashed border-border rounded-lg p-4 cursor-pointer hover:border-azure/40 hover:bg-azure/4 transition-all">
-                  <Upload className="w-5 h-5 text-dim" />
-                  <span className="text-[10px] text-dim text-center">Click or drop files</span>
-                  <input type="file" multiple className="hidden" onChange={(e) => {
-                    if (e.target.files) onDrop(Array.from(e.target.files));
-                  }} />
-                </label>
-
-                {/* File list */}
-                <div className="flex-1 overflow-y-auto py-1">
-                  {fileList.map((f) => (
-                    <button
-                      key={f.path}
-                      onClick={() => store.selectFile(f.path)}
-                      aria-label={`View ${f.path} (${fmtSize(f.size)})`}
-                      aria-current={store.selectedFile === f.path ? "true" : undefined}
-                      className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors duration-150 min-h-[36px] ${
-                        store.selectedFile === f.path
-                          ? "bg-azure/10 text-azure"
-                          : "text-ghost hover:bg-card hover:text-soft"
-                      }`}
-                    >
-                      <FileIcon path={f.path} className="w-3.5 h-3.5" />
-                      <span className="flex-1 text-[11px] font-mono truncate">{f.path}</span>
-                      <span className="text-[10px] text-dim">{fmtSize(f.size)}</span>
-                    </button>
-                  ))}
-                  {fileList.length === 0 && (
-                    <div className="text-center py-6 px-3">
-                      <p className="text-[11px] text-dim">No files loaded</p>
-                      <p className="text-[10px] text-dim/60 mt-1">Import from GitHub or drop files above</p>
+                {/* Code preview */}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  {store.selectedFile && store.files[store.selectedFile] ? (
+                    <>
+                      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-surface/30">
+                        <Code className="w-3.5 h-3.5 text-dim" />
+                        <span className="text-xs font-mono text-ghost flex-1">{store.selectedFile}</span>
+                        {store.embeddingStatus === "ready" && store.selectedFile && (
+                          <button
+                            onClick={() => handleFindSimilar(store.selectedFile!)}
+                            className="text-[10px] text-violet hover:text-violet/80 transition-colors duration-150 px-2 py-1 rounded hover:bg-violet/8"
+                          >
+                            Find Similar
+                          </button>
+                        )}
+                      </div>
+                      <pre className="flex-1 overflow-auto p-4 text-xs font-mono leading-relaxed text-soft">
+                        <code>{store.files[store.selectedFile].content}</code>
+                      </pre>
+                    </>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center gap-4 text-dim">
+                      <div className="w-12 h-12 rounded-xl bg-card border border-border flex items-center justify-center">
+                        <Eye className="w-6 h-6 text-ghost" />
+                      </div>
+                      <div className="text-center space-y-1">
+                        <p className="text-sm font-500 text-ghost">Select a file to preview</p>
+                        <p className="text-xs text-dim">Click any file in the left panel to view its contents</p>
+                      </div>
                     </div>
                   )}
                 </div>
               </div>
-
-              {/* Code preview */}
-              <div className="flex-1 flex flex-col overflow-hidden">
-                {store.selectedFile && store.files[store.selectedFile] ? (
-                  <>
-                    <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-surface/30">
-                      <Code className="w-3.5 h-3.5 text-dim" />
-                      <span className="text-xs font-mono text-ghost flex-1">{store.selectedFile}</span>
-                      {store.embeddingStatus === "ready" && store.selectedFile && (
-                        <button
-                          onClick={() => handleFindSimilar(store.selectedFile!)}
-                          className="text-[10px] text-violet hover:text-violet/80 transition-colors duration-150 px-2 py-1 rounded hover:bg-violet/8"
-                        >
-                          Find Similar
-                        </button>
-                      )}
-                    </div>
-                    <pre className="flex-1 overflow-auto p-4 text-xs font-mono leading-relaxed text-soft">
-                      <code>{store.files[store.selectedFile].content}</code>
-                    </pre>
-                  </>
-                ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center gap-4 text-dim">
-                    <div className="w-12 h-12 rounded-xl bg-card border border-border flex items-center justify-center">
-                      <Eye className="w-6 h-6 text-ghost" />
-                    </div>
-                    <div className="text-center space-y-1">
-                      <p className="text-sm font-500 text-ghost">Select a file to preview</p>
-                      <p className="text-xs text-dim">Click any file in the left panel to view its contents</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+            )
           )}
 
           {/* FINDINGS view */}

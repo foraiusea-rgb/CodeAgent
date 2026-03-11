@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 export type Severity = "critical" | "warning" | "info";
 export type DiffStatus = "pending" | "approved" | "rejected";
@@ -125,6 +126,10 @@ interface AppState {
   setSelectedMode: (m: AgentMode) => void;
   projectName: string;
   setProjectName: (n: string) => void;
+  theme: "dark" | "light" | "system";
+  setTheme: (t: "dark" | "light" | "system") => void;
+  sidebarOpen: boolean;
+  setSidebarOpen: (v: boolean) => void;
 
   // Embeddings
   embeddedChunks: EmbeddedChunk[];
@@ -143,7 +148,9 @@ interface AppState {
   setSearchLoading: (loading: boolean) => void;
 }
 
-export const useStore = create<AppState>((set, get) => ({
+export const useStore = create<AppState>()(
+  persist(
+    (set, get) => ({
   files: {},
   selectedFile: null,
   addFiles: (newFiles) =>
@@ -266,6 +273,10 @@ export const useStore = create<AppState>((set, get) => ({
   setSelectedMode: (m) => set({ selectedMode: m }),
   projectName: "Untitled Project",
   setProjectName: (n) => set({ projectName: n }),
+  theme: "dark",
+  setTheme: (t) => set({ theme: t }),
+  sidebarOpen: true,
+  setSidebarOpen: (v) => set({ sidebarOpen: v }),
 
   // Embeddings
   embeddedChunks: [],
@@ -282,4 +293,20 @@ export const useStore = create<AppState>((set, get) => ({
   setSearchQuery: (query) => set({ searchQuery: query }),
   setSearchResults: (results) => set({ searchResults: results }),
   setSearchLoading: (loading) => set({ searchLoading: loading }),
-}));
+    }),
+    {
+      name: "codeagent-store",
+      partialize: (state) => ({
+        files: state.files,
+        findings: state.findings,
+        config: state.config,
+        timeline: state.timeline,
+        projectName: state.projectName,
+        selectedMode: state.selectedMode,
+        stats: state.stats,
+        theme: state.theme,
+        sidebarOpen: state.sidebarOpen,
+      }),
+    }
+  )
+);
