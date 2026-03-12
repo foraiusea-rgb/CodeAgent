@@ -11,6 +11,7 @@ import {
   PanelLeftClose, PanelLeft, Sun, Moon, Laptop, Trash2, ShieldCheck, EyeOff,
   type LucideIcon,
 } from "lucide-react";
+import NextLink from "next/link";
 import { useStore } from "@/lib/store";
 import { runAgent } from "@/lib/agent";
 import type { Finding } from "@/lib/store";
@@ -538,12 +539,12 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
 
       {/* Top bar */}
       <header className="flex-shrink-0 h-14 flex items-center gap-3 px-4 bg-ink border-b border-border" role="banner">
-        <div className="flex items-center gap-2">
+        <NextLink href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity" aria-label="Go to homepage">
           <div className="w-7 h-7 rounded-lg bg-azure flex items-center justify-center">
             <Zap className="w-3.5 h-3.5 text-white" />
           </div>
           <span className="font-display font-700 text-sm">CodeAgent</span>
-        </div>
+        </NextLink>
 
         <div className="w-px h-5 bg-border mx-1" />
 
