@@ -1,27 +1,25 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Zap, Shield, Rocket, GitBranch, ArrowRight, CheckCircle, Search, Layers, Upload, Clock, Code } from "lucide-react";
+import {
+  Zap, Shield, Rocket, GitBranch, ArrowRight, CheckCircle,
+  Upload, Clock, Code, Play, Pause, ChevronLeft, ChevronRight,
+  AlertCircle, AlertTriangle, Info, Bug, Lock, Gauge, Sparkles,
+} from "lucide-react";
 
 const STEPS = [
   { icon: Upload, label: "Upload", desc: "Drop files or paste a GitHub URL" },
-  { icon: Code, label: "Analyze", desc: "AI scans for bugs, security issues, and performance" },
+  { icon: Code, label: "Analyze", desc: "AI scans for bugs, security, performance & more" },
   { icon: CheckCircle, label: "Review", desc: "Approve or skip each suggested fix" },
   { icon: Rocket, label: "Ship", desc: "Download your improved codebase" },
 ];
 
 const FEATURES = [
-  { icon: Shield, label: "Bug Detection", desc: "Catch logic errors, null refs, and edge cases before they hit production", accent: "text-rose" },
-  { icon: Zap, label: "Performance", desc: "Identify bottlenecks, O(n\u00B2) loops, and unnecessary re-renders instantly", accent: "text-amber" },
-  { icon: Rocket, label: "Optimization", desc: "Refactor to idiomatic patterns, reduce complexity, improve readability", accent: "text-emerald" },
-  { icon: GitBranch, label: "Security", desc: "Spot injection vulnerabilities, insecure deps, and auth flaws", accent: "text-violet" },
-];
-
-const MODES = [
-  { icon: Search, name: "Review", desc: "Bugs, security issues, code smells", accent: "azure", bg: "bg-azure/8", border: "border-azure/15" },
-  { icon: Rocket, name: "Optimize", desc: "Performance, patterns, readability", accent: "violet", bg: "bg-violet/8", border: "border-violet/15" },
-  { icon: Layers, name: "Pipeline", desc: "Full review + optimize in one pass", accent: "emerald", bg: "bg-emerald/8", border: "border-emerald/15" },
+  { icon: Bug, label: "Bug Detection", desc: "Catch null refs, off-by-one errors, missing awaits, and race conditions before production", accent: "text-rose" },
+  { icon: Gauge, label: "Performance", desc: "Flag O(n\u00B2) loops, missing memoization, N+1 queries, and unnecessary re-renders", accent: "text-amber" },
+  { icon: Lock, label: "Security", desc: "Spot SQL injection, XSS, hardcoded secrets, and insecure authentication patterns", accent: "text-violet" },
+  { icon: Sparkles, label: "Code Quality", desc: "Dead code removal, naming improvements, missing error handling, SOLID violations", accent: "text-emerald" },
 ];
 
 const CODE_SAMPLE = `// Before CodeAgent
@@ -42,6 +40,227 @@ async function getUserData(id: string): Promise<User> {
   return user.rows[0] ?? null
 }`;
 
+// ── Video walkthrough slides ─────────────────────────────────────────────────
+const WALKTHROUGH_SLIDES = [
+  {
+    step: 1,
+    title: "Upload your code",
+    desc: "Drag & drop files into the workspace, or paste a public GitHub URL to import an entire repository. Supports 20+ languages including TypeScript, Python, Go, Rust, Java, and more.",
+    detail: "CodeAgent reads up to 50 files (100KB each). It strips node_modules, .git, and build folders automatically.",
+    accent: "azure",
+  },
+  {
+    step: 2,
+    title: "Choose your focus",
+    desc: "Select which areas to analyze: bugs, security, performance, quality, accessibility, or SEO. Check one or all six \u2014 the AI adapts its analysis to what you care about.",
+    detail: "Quick Scan does a single focused pass. Deep Analysis runs two passes \u2014 the second specifically hunts for subtle edge cases like race conditions and timing attacks.",
+    accent: "violet",
+  },
+  {
+    step: 3,
+    title: "Hit Analyze",
+    desc: "CodeAgent sends your code to the AI model you chose (Gemini, OpenRouter, or a local LLM). It returns structured findings with exact line numbers and one-click fixes.",
+    detail: "Each finding includes: severity (critical/warning/info), category, explanation, the exact code to replace, and the improved version. Typical analysis: 30\u201390 seconds.",
+    accent: "emerald",
+  },
+  {
+    step: 4,
+    title: "Review & apply fixes",
+    desc: "Browse findings grouped by file. Each one shows a before/after diff. Click \"Apply fix\" to patch your code instantly, or \"Skip\" to ignore it.",
+    detail: "Applied fixes modify the in-memory file. When done, download the full reviewed codebase as a JSON bundle. No changes are made to your original files.",
+    accent: "amber",
+  },
+];
+
+// ── Example findings with real code ──────────────────────────────────────────
+const EXAMPLE_FINDINGS = [
+  {
+    severity: "critical",
+    category: "security",
+    title: "SQL Injection Vulnerability",
+    file: "api/users.ts",
+    line: 23,
+    explanation: "User input concatenated directly into SQL query. An attacker can inject arbitrary SQL to read, modify, or delete data.",
+    before: `db.query("SELECT * FROM users WHERE id = " + req.params.id)`,
+    after: `db.query("SELECT * FROM users WHERE id = $1", [req.params.id])`,
+    impact: "Prevents unauthorized database access",
+  },
+  {
+    severity: "critical",
+    category: "bugs",
+    title: "Unhandled Promise Rejection",
+    file: "lib/api-client.ts",
+    line: 47,
+    explanation: "Async function called without await or .catch(). If the fetch fails, the error silently disappears and downstream code gets undefined.",
+    before: `function loadUser(id) {\n  fetch("/api/users/" + id)\n  return cache[id]\n}`,
+    after: `async function loadUser(id) {\n  const resp = await fetch("/api/users/" + id)\n  cache[id] = await resp.json()\n  return cache[id]\n}`,
+    impact: "Eliminates silent data loss on network failures",
+  },
+  {
+    severity: "warning",
+    category: "performance",
+    title: "O(n\u00B2) Nested Loop",
+    file: "utils/filter.ts",
+    line: 12,
+    explanation: "Array.includes() inside Array.filter() creates O(n*m) complexity. For 10K items with 10K IDs, that is 100M comparisons.",
+    before: `const result = items.filter(\n  item => allowedIds.includes(item.id)\n)`,
+    after: `const idSet = new Set(allowedIds)\nconst result = items.filter(\n  item => idSet.has(item.id)\n)`,
+    impact: "Reduces from O(n\u00B2) to O(n) \u2014 100x faster for large arrays",
+  },
+  {
+    severity: "warning",
+    category: "quality",
+    title: "Missing Error Boundary",
+    file: "components/Dashboard.tsx",
+    line: 5,
+    explanation: "Component renders user data without error boundary. If any child throws during render, the entire app crashes with a white screen.",
+    before: `export default function Dashboard() {\n  return <UserList />\n}`,
+    after: `export default function Dashboard() {\n  return (\n    <ErrorBoundary fallback={<ErrorCard />}>\n      <UserList />\n    </ErrorBoundary>\n  )\n}`,
+    impact: "Prevents full-app crashes from component errors",
+  },
+  {
+    severity: "info",
+    category: "accessibility",
+    title: "Image Missing Alt Text",
+    file: "pages/about.tsx",
+    line: 34,
+    explanation: "Screen readers cannot describe this image to visually impaired users. All informational images need descriptive alt text.",
+    before: `<img src="/team.jpg" />`,
+    after: `<img src="/team.jpg" alt="Team photo of 5 engineers at the office" />`,
+    impact: "WCAG 2.1 Level A compliance",
+  },
+  {
+    severity: "info",
+    category: "seo",
+    title: "Missing Meta Description",
+    file: "app/layout.tsx",
+    line: 8,
+    explanation: "Pages without meta descriptions show auto-generated snippets in search results, reducing click-through rates by up to 30%.",
+    before: `export const metadata = {\n  title: "My App"\n}`,
+    after: `export const metadata = {\n  title: "My App",\n  description: "Build faster with AI-powered tools"\n}`,
+    impact: "Improves search engine click-through rate",
+  },
+];
+
+const SEV_STYLE = {
+  critical: { icon: AlertCircle, color: "text-rose", bg: "bg-rose/10", border: "border-rose/25" },
+  warning: { icon: AlertTriangle, color: "text-amber", bg: "bg-amber/10", border: "border-amber/25" },
+  info: { icon: Info, color: "text-azure", bg: "bg-azure/10", border: "border-azure/25" },
+};
+
+// ── Walkthrough "Video" component ────────────────────────────────────────────
+function WalkthroughVideo() {
+  const [current, setCurrent] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const startTimer = useCallback(() => {
+    intervalRef.current = setInterval(() => {
+      setCurrent((c) => (c + 1) % WALKTHROUGH_SLIDES.length);
+    }, 6000);
+  }, []);
+
+  useEffect(() => {
+    if (playing) {
+      startTimer();
+    }
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [playing, startTimer]);
+
+  const goTo = (i: number) => {
+    setCurrent(i);
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (playing) startTimer();
+  };
+
+  const slide = WALKTHROUGH_SLIDES[current];
+  const accentMap: Record<string, string> = {
+    azure: "bg-azure",
+    violet: "bg-violet",
+    emerald: "bg-emerald",
+    amber: "bg-amber",
+  };
+
+  return (
+    <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-2xl shadow-black/30">
+      {/* Video top bar */}
+      <div className="flex items-center gap-2 px-4 py-2.5 bg-surface/60 border-b border-border">
+        <div className="w-3 h-3 rounded-full bg-rose/50" />
+        <div className="w-3 h-3 rounded-full bg-amber/50" />
+        <div className="w-3 h-3 rounded-full bg-emerald/50" />
+        <span className="ml-3 text-xs text-dim font-mono">How to use CodeAgent</span>
+
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => goTo((current - 1 + WALKTHROUGH_SLIDES.length) % WALKTHROUGH_SLIDES.length)}
+            className="p-1 rounded hover:bg-muted text-dim hover:text-ghost transition-colors"
+            aria-label="Previous step"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setPlaying(!playing)}
+            className="p-1 rounded hover:bg-muted text-dim hover:text-ghost transition-colors"
+            aria-label={playing ? "Pause" : "Play"}
+          >
+            {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          </button>
+          <button
+            onClick={() => goTo((current + 1) % WALKTHROUGH_SLIDES.length)}
+            className="p-1 rounded hover:bg-muted text-dim hover:text-ghost transition-colors"
+            aria-label="Next step"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Slide content */}
+      <div className="p-8 min-h-[260px] flex flex-col justify-center">
+        <motion.div
+          key={current}
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <div className={`w-10 h-10 rounded-xl ${accentMap[slide.accent] || "bg-azure"} flex items-center justify-center text-white font-display font-800 text-lg`}>
+              {slide.step}
+            </div>
+            <h3 className="font-display text-xl font-700 text-text">{slide.title}</h3>
+          </div>
+          <p className="text-sm text-ghost leading-relaxed mb-4 max-w-xl">{slide.desc}</p>
+          <p className="text-xs text-dim leading-relaxed max-w-xl">{slide.detail}</p>
+        </motion.div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="flex gap-1 px-4 pb-3">
+        {WALKTHROUGH_SLIDES.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => goTo(i)}
+            className="flex-1 h-1 rounded-full overflow-hidden bg-muted"
+            aria-label={`Go to step ${i + 1}`}
+          >
+            <div
+              className={`h-full rounded-full transition-all duration-300 ${
+                i < current ? "bg-azure w-full" :
+                i === current ? "bg-azure" : "w-0"
+              }`}
+              style={i === current ? {
+                width: playing ? "100%" : "30%",
+                transition: playing ? "width 6s linear" : "width 0.3s",
+              } : undefined}
+            />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Main landing page ────────────────────────────────────────────────────────
 export default function LandingPage() {
   const router = useRouter();
   const [apiKey, setApiKey] = useState("");
@@ -102,7 +321,7 @@ export default function LandingPage() {
         </motion.div>
       </nav>
 
-      {/* Hero — Lead with the problem */}
+      {/* Hero */}
       <main className="relative z-10 max-w-7xl mx-auto px-6 pt-16 pb-24">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
@@ -139,7 +358,7 @@ export default function LandingPage() {
                   className="flex items-center gap-2 px-6 py-3 rounded-xl font-display font-600 text-white bg-azure text-sm hover:bg-azure/90 transition-colors duration-150 min-h-[48px]"
                 >
                   <Zap className="w-4 h-4" />
-                  Start reviewing code
+                  Start analyzing code
                 </motion.button>
                 <button
                   onClick={() => setShowInput(true)}
@@ -176,7 +395,7 @@ export default function LandingPage() {
           </div>
 
           <p className="mt-4 text-xs text-dim">
-            Free with OpenRouter · Keys stored in-browser only · Self-hostable · MIT License
+            Free with OpenRouter &middot; Keys stored in-browser only &middot; Self-hostable &middot; MIT License
           </p>
         </motion.div>
 
@@ -204,7 +423,7 @@ export default function LandingPage() {
           </div>
         </motion.div>
 
-        {/* How it works — step-by-step flow */}
+        {/* How it works */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
@@ -232,11 +451,23 @@ export default function LandingPage() {
           </div>
         </motion.div>
 
-        {/* What it catches */}
+        {/* Video Walkthrough */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.35, duration: 0.5 }}
+          className="mt-24 max-w-3xl mx-auto"
+        >
+          <h2 className="font-display text-2xl font-700 text-text text-center mb-3">Step-by-step walkthrough</h2>
+          <p className="text-ghost text-sm text-center mb-8">Watch how a full analysis works from start to finish</p>
+          <WalkthroughVideo />
+        </motion.div>
+
+        {/* What it catches */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4, duration: 0.5 }}
           className="mt-24 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-5xl mx-auto"
         >
           {FEATURES.map((f, i) => (
@@ -244,7 +475,7 @@ export default function LandingPage() {
               key={f.label}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 + i * 0.06 }}
+              transition={{ delay: 0.45 + i * 0.06 }}
               className="rounded-xl p-5 bg-card border border-border group hover:border-muted transition-colors duration-200 cursor-default"
             >
               <div className="w-9 h-9 rounded-lg bg-surface border border-border flex items-center justify-center mb-3 group-hover:border-muted transition-colors duration-200">
@@ -256,32 +487,58 @@ export default function LandingPage() {
           ))}
         </motion.div>
 
-        {/* Three modes */}
+        {/* Real Example Findings */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.45 }}
-          className="mt-24 text-center max-w-3xl mx-auto"
+          transition={{ delay: 0.5 }}
+          className="mt-24 max-w-5xl mx-auto"
         >
-          <h2 className="font-display text-2xl font-700 text-text mb-3">Three analysis modes</h2>
-          <p className="text-ghost text-sm mb-10">Pick the depth you need — from a quick scan to a full refactor pipeline.</p>
+          <h2 className="font-display text-2xl font-700 text-text text-center mb-3">Real findings, real fixes</h2>
+          <p className="text-ghost text-sm text-center mb-10 max-w-xl mx-auto">
+            These are actual examples of what CodeAgent catches. Each finding includes an explanation, the exact code to fix, and a one-click patch.
+          </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {MODES.map((m, i) => (
-              <motion.div
-                key={m.name}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.5 + i * 0.06 }}
-                className={`rounded-xl p-5 text-center cursor-default border ${m.border} ${m.bg} hover:border-muted transition-colors duration-200`}
-              >
-                <div className={`w-10 h-10 rounded-xl border ${m.border} ${m.bg} flex items-center justify-center mx-auto mb-3`}>
-                  <m.icon className={`w-5 h-5 text-${m.accent}`} />
-                </div>
-                <div className="font-display font-700 text-sm text-text mb-1">{m.name}</div>
-                <div className="text-xs text-ghost">{m.desc}</div>
-              </motion.div>
-            ))}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {EXAMPLE_FINDINGS.map((ex, i) => {
+              const sev = SEV_STYLE[ex.severity as keyof typeof SEV_STYLE];
+              const SevIcon = sev.icon;
+              return (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.55 + i * 0.05 }}
+                  className="rounded-xl border border-border bg-card overflow-hidden"
+                >
+                  {/* Finding header */}
+                  <div className="p-4 space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md ${sev.bg} ${sev.color} ${sev.border} border`}>
+                        <SevIcon className="w-3 h-3" />
+                        {ex.severity}
+                      </span>
+                      <span className="text-[10px] text-dim bg-muted/40 px-1.5 py-0.5 rounded-md">{ex.category}</span>
+                      <span className="text-[10px] text-dim font-mono ml-auto">{ex.file}:{ex.line}</span>
+                    </div>
+                    <p className="text-sm font-600 text-text">{ex.title}</p>
+                    <p className="text-xs text-ghost leading-relaxed">{ex.explanation}</p>
+                    {ex.impact && (
+                      <p className="text-[11px] text-emerald">&uarr; {ex.impact}</p>
+                    )}
+                  </div>
+                  {/* Before / After */}
+                  <div className="border-t border-border">
+                    <pre className="text-[10px] font-mono px-4 py-2.5 bg-rose/3 text-rose/80 leading-relaxed overflow-x-auto border-b border-border">
+                      <code>{ex.before}</code>
+                    </pre>
+                    <pre className="text-[10px] font-mono px-4 py-2.5 bg-emerald/3 text-emerald/80 leading-relaxed overflow-x-auto">
+                      <code>{ex.after}</code>
+                    </pre>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         </motion.div>
 
@@ -289,16 +546,16 @@ export default function LandingPage() {
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.6 }}
+          transition={{ delay: 0.7 }}
           className="mt-24 text-center"
         >
           <button
             onClick={() => router.push("/review")}
             className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-display font-600 text-sm text-white bg-azure hover:bg-azure/90 transition-colors duration-150 min-h-[48px]"
           >
-            Start reviewing code <ArrowRight className="w-4 h-4" />
+            Start analyzing code <ArrowRight className="w-4 h-4" />
           </button>
-          <p className="mt-4 text-xs text-dim">No account needed · Self-hostable · MIT License</p>
+          <p className="mt-4 text-xs text-dim">No account needed &middot; Self-hostable &middot; MIT License</p>
         </motion.div>
       </main>
     </div>

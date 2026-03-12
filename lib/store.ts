@@ -3,7 +3,6 @@ import { persist } from "zustand/middleware";
 
 export type Severity = "critical" | "warning" | "info";
 export type DiffStatus = "pending" | "approved" | "rejected";
-export type AgentMode = "review" | "optimize" | "pipeline";
 export type Provider = "openrouter" | "gemini" | "local";
 
 export interface CodeFile {
@@ -27,7 +26,6 @@ export interface Finding {
   impact?: string;
   status: DiffStatus;
   pass: number;
-  mode: AgentMode;
   timestamp: string;
 }
 
@@ -46,28 +44,11 @@ export interface TokenUsage {
 
 export interface Config {
   apiKey: string;
-  embeddingApiKey: string;
   provider: Provider;
   model: string;
-  aggression: "conservative" | "balanced" | "aggressive";
+  scanDepth: "quick" | "deep";
   autoApproveInfo: boolean;
   focus: string[];
-}
-
-export interface EmbeddedChunk {
-  id: string;
-  filePath: string;
-  startLine: number;
-  endLine: number;
-  content: string;
-  preview: string;
-  embedding: number[];
-  magnitude: number;
-}
-
-export interface SearchResult {
-  chunk: Omit<EmbeddedChunk, "embedding" | "magnitude">;
-  score: number;
 }
 
 interface AppState {
@@ -87,11 +68,10 @@ interface AppState {
 
   // Agent
   agentRunning: boolean;
-  agentMode: AgentMode | null;
   currentPass: number;
   totalPasses: number;
   statusMessage: string;
-  setAgentRunning: (v: boolean, mode?: AgentMode | null) => void;
+  setAgentRunning: (v: boolean) => void;
   setAgentStatus: (msg: string) => void;
   setProgress: (current: number, total: number) => void;
 
@@ -120,32 +100,14 @@ interface AppState {
   setConfig: (c: Partial<Config>) => void;
 
   // UI
-  activeView: "files" | "findings" | "search" | "timeline" | "config";
-  selectedMode: AgentMode;
+  activeView: "files" | "findings" | "timeline" | "config";
   setActiveView: (v: AppState["activeView"]) => void;
-  setSelectedMode: (m: AgentMode) => void;
   projectName: string;
   setProjectName: (n: string) => void;
   theme: "dark" | "light" | "system";
   setTheme: (t: "dark" | "light" | "system") => void;
   sidebarOpen: boolean;
   setSidebarOpen: (v: boolean) => void;
-
-  // Embeddings
-  embeddedChunks: EmbeddedChunk[];
-  embeddingStatus: "idle" | "embedding" | "ready" | "error";
-  embeddingProgress: string;
-  searchQuery: string;
-  searchResults: SearchResult[];
-  searchLoading: boolean;
-  setEmbeddedChunks: (chunks: EmbeddedChunk[]) => void;
-  addEmbeddedChunks: (chunks: EmbeddedChunk[]) => void;
-  clearEmbeddings: () => void;
-  setEmbeddingStatus: (status: "idle" | "embedding" | "ready" | "error") => void;
-  setEmbeddingProgress: (msg: string) => void;
-  setSearchQuery: (query: string) => void;
-  setSearchResults: (results: SearchResult[]) => void;
-  setSearchLoading: (loading: boolean) => void;
 
   // Session
   clearSession: () => void;
@@ -163,7 +125,7 @@ export const useStore = create<AppState>()(
         ...Object.fromEntries(newFiles.map((f) => [f.path, f])),
       },
     })),
-  clearFiles: () => set({ files: {}, selectedFile: null, embeddedChunks: [], embeddingStatus: "idle" as const, embeddingProgress: "", searchResults: [], searchQuery: "" }),
+  clearFiles: () => set({ files: {}, selectedFile: null }),
   selectFile: (path) => set({ selectedFile: path }),
 
   findings: {},
@@ -209,11 +171,10 @@ export const useStore = create<AppState>()(
   clearFindings: () => set({ findings: {}, stats: { approved: 0, rejected: 0, pending: 0 } }),
 
   agentRunning: false,
-  agentMode: null,
   currentPass: 0,
   totalPasses: 0,
   statusMessage: "",
-  setAgentRunning: (v, mode = null) => set({ agentRunning: v, agentMode: mode }),
+  setAgentRunning: (v) => set({ agentRunning: v }),
   setAgentStatus: (msg) => set({ statusMessage: msg }),
   setProgress: (current, total) => set({ currentPass: current, totalPasses: total }),
 
@@ -261,19 +222,16 @@ export const useStore = create<AppState>()(
 
   config: {
     apiKey: "",
-    embeddingApiKey: "",
     provider: "openrouter",
     model: "qwen/qwen3-coder:free",
-    aggression: "balanced",
+    scanDepth: "quick",
     autoApproveInfo: false,
     focus: ["bugs", "security", "performance", "quality"],
   },
   setConfig: (c) => set((s) => ({ config: { ...s.config, ...c } })),
 
   activeView: "files",
-  selectedMode: "review",
   setActiveView: (v) => set({ activeView: v }),
-  setSelectedMode: (m) => set({ selectedMode: m }),
   projectName: "Untitled Project",
   setProjectName: (n) => set({ projectName: n }),
   theme: "dark",
@@ -281,33 +239,16 @@ export const useStore = create<AppState>()(
   sidebarOpen: true,
   setSidebarOpen: (v) => set({ sidebarOpen: v }),
 
-  // Embeddings
-  embeddedChunks: [],
-  embeddingStatus: "idle",
-  embeddingProgress: "",
-  searchQuery: "",
-  searchResults: [],
-  searchLoading: false,
-  setEmbeddedChunks: (chunks) => set({ embeddedChunks: chunks, embeddingStatus: "ready" as const }),
-  addEmbeddedChunks: (chunks) => set((s) => ({ embeddedChunks: [...s.embeddedChunks, ...chunks] })),
-  clearEmbeddings: () => set({ embeddedChunks: [], embeddingStatus: "idle" as const, embeddingProgress: "", searchResults: [], searchQuery: "" }),
-  setEmbeddingStatus: (status) => set({ embeddingStatus: status }),
-  setEmbeddingProgress: (msg) => set({ embeddingProgress: msg }),
-  setSearchQuery: (query) => set({ searchQuery: query }),
-  setSearchResults: (results) => set({ searchResults: results }),
-  setSearchLoading: (loading) => set({ searchLoading: loading }),
-
-  // Clear everything — API keys, files, findings, embeddings
+  // Clear everything — API keys, files, findings
   clearSession: () => {
     sessionStorage.removeItem("ca_api_key");
     sessionStorage.removeItem("ca_provider");
     set({
       config: {
         apiKey: "",
-        embeddingApiKey: "",
         provider: "openrouter",
         model: "qwen/qwen3-coder:free",
-        aggression: "balanced",
+        scanDepth: "quick",
         autoApproveInfo: false,
         focus: ["bugs", "security", "performance", "quality"],
       },
@@ -316,11 +257,6 @@ export const useStore = create<AppState>()(
       findings: {},
       timeline: [],
       stats: { approved: 0, rejected: 0, pending: 0 },
-      embeddedChunks: [],
-      embeddingStatus: "idle" as const,
-      embeddingProgress: "",
-      searchResults: [],
-      searchQuery: "",
       projectName: "Untitled Project",
       activeView: "files" as const,
     });
@@ -332,10 +268,9 @@ export const useStore = create<AppState>()(
         files: state.files,
         findings: state.findings,
         // Persist config WITHOUT API keys — keys stay in sessionStorage only
-        config: { ...state.config, apiKey: "", embeddingApiKey: "" },
+        config: { ...state.config, apiKey: "" },
         timeline: state.timeline,
         projectName: state.projectName,
-        selectedMode: state.selectedMode,
         stats: state.stats,
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,

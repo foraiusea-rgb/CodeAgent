@@ -1,6 +1,6 @@
 // ── Hybrid LLM client ────────────────────────────────────────────────────────
 // OpenRouter & Local: direct browser calls (CORS-friendly, no timeout limit)
-// Gemini: proxied through /api/analyze & /api/embeddings (CORS blocks direct calls)
+// Gemini: proxied through /api/analyze (CORS blocks direct calls)
 
 import type { Provider } from "./store";
 
@@ -197,33 +197,3 @@ async function callOpenRouter(
   throw new Error("Rate limited after retries. Please wait a moment and try again.");
 }
 
-// ── Gemini Embeddings (proxied through /api/embeddings) ─────────────────────
-
-export async function callEmbeddings(
-  texts: string[],
-  apiKey: string,
-  taskType: string = "RETRIEVAL_DOCUMENT",
-  model?: string
-): Promise<number[][]> {
-  if (!apiKey?.trim()) throw new Error("No API key provided. Add your Gemini key in Config.");
-  if (!texts?.length) throw new Error("No texts provided");
-
-  const resp = await fetch("/api/embeddings", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      texts,
-      apiKey,
-      taskType,
-      model: model || "gemini-embedding-001",
-    }),
-  });
-
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ error: resp.statusText }));
-    throw new Error(err.error || `Embedding failed: ${resp.status}`);
-  }
-
-  const data = await resp.json();
-  return data.embeddings;
-}

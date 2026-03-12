@@ -1,7 +1,12 @@
-import { useStore, type AgentMode, type Finding, type CodeFile, type TokenUsage } from "./store";
+import { useStore, type Finding, type CodeFile, type TokenUsage } from "./store";
 import { callLLM } from "./llm-client";
 
-const SYSTEM_REVIEW = `You are an expert code reviewer. Analyze the provided codebase and return a JSON array of findings.
+function buildSystemPrompt(focus: string[]): string {
+  const focusStr = focus.length > 0 ? focus.join(", ") : "bugs, security, performance, quality";
+
+  return `You are an expert code analyst. Analyze the provided codebase and return a JSON array of findings.
+
+Focus on these areas: ${focusStr}
 
 Each finding must have these exact fields:
 {
@@ -10,39 +15,61 @@ Each finding must have these exact fields:
   "line_start": number or null,
   "line_end": number or null,
   "severity": "critical" | "warning" | "info",
-  "category": "bugs" | "security" | "performance" | "quality" | "accessibility" | "seo",
+  "category": "${focus.join('" | "') || "bugs\" | \"security\" | \"performance\" | \"quality"}",
   "title": "short title",
-  "explanation": "clear explanation of the issue",
-  "old_code": "exact code snippet to replace (copy verbatim)",
+  "explanation": "clear explanation of the issue and why it matters",
+  "old_code": "exact code snippet to replace (copy verbatim from the source)",
   "new_code": "improved replacement code",
   "impact": "brief impact statement"
 }
 
-Return ONLY a valid JSON array. No markdown, no commentary. Focus on actionable, high-value findings.`;
+Rules:
+- Return ONLY a valid JSON array. No markdown, no commentary, no code fences.
+- Focus on actionable, high-value findings with concrete fixes.
+- old_code must be an exact copy from the source so it can be matched and replaced.
+- Cover edge cases: null checks, off-by-one errors, race conditions, missing error handling.
+- For security: check for injection, XSS, hardcoded secrets, insecure patterns.
+- For performance: flag O(n\u00B2) loops, unnecessary re-renders, missing memoization, N+1 queries.`;
+}
 
-const SYSTEM_OPTIMIZE = `You are an expert code optimizer. Analyze the provided codebase for optimization opportunities and return a JSON array.
+function buildDeepPassPrompt(focus: string[]): string {
+  const focusStr = focus.length > 0 ? focus.join(", ") : "bugs, security, performance, quality";
 
-Each item must have:
+  return `You are an expert code analyst performing a DEEP second pass. The first pass already found obvious issues.
+Now look for SUBTLE problems that are easy to miss.
+
+Focus on these areas: ${focusStr}
+
+Look specifically for:
+- Edge cases: What happens with empty arrays, null values, concurrent access, very large inputs?
+- Security: Are there timing attacks, CSRF vulnerabilities, information leakage in error messages?
+- Architectural: Is there tight coupling, missing abstraction, violation of SOLID principles?
+- Hidden bugs: Race conditions, memory leaks, unclosed resources, implicit type coercion?
+- Missing validation: Boundary checks, type guards, input sanitization?
+
+Each finding must have these exact fields:
 {
   "id": "unique string",
   "file": "filename",
   "line_start": number or null,
+  "line_end": number or null,
   "severity": "critical" | "warning" | "info",
-  "category": "performance" | "quality" | "patterns" | "refactor",
-  "title": "optimization title",
-  "explanation": "why this optimization matters",
-  "old_code": "exact current code",
-  "new_code": "optimized replacement",
-  "impact": "expected improvement"
+  "category": "${focusStr}",
+  "title": "short title",
+  "explanation": "clear explanation of the subtle issue",
+  "old_code": "exact code snippet to replace (copy verbatim)",
+  "new_code": "improved replacement code",
+  "impact": "what could go wrong if this is not fixed"
 }
 
-Return ONLY a valid JSON array. No markdown fences.`;
+Return ONLY a valid JSON array. No markdown, no commentary.`;
+}
 
-function buildCodebasePrompt(files: Record<string, CodeFile>, config: { aggression: string; focus: string[]; provider?: string }): string {
+function buildCodebasePrompt(files: Record<string, CodeFile>, config: { focus: string[]; provider?: string }): string {
   const fileEntries = Object.entries(files);
   if (fileEntries.length === 0) return "No files provided.";
 
-  const parts = ["Focus areas: " + config.focus.join(", ") + "\nAggression level: " + config.aggression + "\n\n"];
+  const parts = ["Focus areas: " + config.focus.join(", ") + "\n\n"];
   let totalChars = 0;
   const MAX_CHARS = config.provider === "local" ? 20000 : 80000;
 
@@ -101,7 +128,6 @@ async function callAI(
   systemPrompt: string,
   config: ReturnType<typeof useStore.getState>["config"]
 ): Promise<{ content: string; usage: TokenUsage }> {
-  // Direct browser-to-API call — no Vercel serverless proxy, no 504 timeouts
   const result = await callLLM(
     [{ role: "user", content: userPrompt }],
     systemPrompt,
@@ -120,7 +146,7 @@ async function callAI(
   };
 }
 
-export async function runAgent(mode: AgentMode) {
+export async function runAgent() {
   const store = useStore.getState();
   const {
     files, config, setAgentRunning, setAgentStatus, setProgress,
@@ -135,16 +161,17 @@ export async function runAgent(mode: AgentMode) {
     throw new Error("No API key. Add one in Config.");
   }
 
-  setAgentRunning(true, mode);
+  setAgentRunning(true);
   clearFindings();
   resetTokenUsage();
   setElapsedTime(0);
   setAgentStep("initializing", 0);
-  addTimeline({ message: `Agent started: ${mode} mode`, type: "system" });
 
-  const modes: AgentMode[] = mode === "pipeline" ? ["review", "optimize"] : [mode];
-  const totalPasses = modes.length;
+  const isDeep = config.scanDepth === "deep";
+  const totalPasses = isDeep ? 2 : 1;
   const startTime = Date.now();
+
+  addTimeline({ message: `Analysis started (${isDeep ? "deep" : "quick"} scan)`, type: "system" });
 
   // Elapsed time tracker
   const timerInterval = setInterval(() => {
@@ -152,29 +179,32 @@ export async function runAgent(mode: AgentMode) {
   }, 1000);
 
   try {
-    for (let i = 0; i < modes.length; i++) {
-      const currentMode = modes[i];
-      const passNum = i + 1;
+    for (let passNum = 1; passNum <= totalPasses; passNum++) {
       setProgress(passNum, totalPasses);
 
       // Sub-step 1: Building prompt
       setAgentStep("Building code prompt...", 10);
-      setAgentStatus(`Pass ${passNum}/${totalPasses}: Preparing ${currentMode} analysis...`);
-      addTimeline({ message: `Pass ${passNum}: ${currentMode}`, type: "system" });
+      const passLabel = isDeep ? `Pass ${passNum}/${totalPasses}` : "Analyzing";
+      setAgentStatus(`${passLabel}: Preparing analysis...`);
+      if (isDeep) {
+        addTimeline({ message: `Pass ${passNum}: ${passNum === 1 ? "primary scan" : "deep edge-case scan"}`, type: "system" });
+      }
 
-      const system = currentMode === "review" ? SYSTEM_REVIEW : SYSTEM_OPTIMIZE;
+      const system = passNum === 1
+        ? buildSystemPrompt(config.focus)
+        : buildDeepPassPrompt(config.focus);
       const prompt = buildCodebasePrompt(files, { ...config, provider: config.provider });
 
       // Sub-step 2: Calling AI
       setAgentStep("Sending to AI model...", 30);
-      setAgentStatus(`Pass ${passNum}/${totalPasses}: Calling ${config.model || "AI"}...`);
+      setAgentStatus(`${passLabel}: Calling ${config.model || "AI"}...`);
 
       const result = await callAI(prompt, system, config);
 
       // Sub-step 3: Token usage received
       addTokenUsage(result.usage);
       setAgentStep("Parsing response...", 75);
-      setAgentStatus(`Pass ${passNum}/${totalPasses}: Parsing findings...`);
+      setAgentStatus(`${passLabel}: Parsing findings...`);
 
       // Sub-step 4: Parse findings
       const parsed = extractJSON(result.content);
@@ -195,7 +225,6 @@ export async function runAgent(mode: AgentMode) {
           impact: f.impact ? String(f.impact) : undefined,
           status: "pending",
           pass: passNum,
-          mode: currentMode,
           timestamp: new Date().toISOString(),
         }));
 
@@ -209,12 +238,12 @@ export async function runAgent(mode: AgentMode) {
       addTimeline({ message: `Found ${findings.length} issues`, type: "system" });
 
       setAgentStep("Pass complete", 100);
-      setAgentStatus(`Pass ${passNum} complete — ${findings.length} findings`);
+      setAgentStatus(`${passLabel} complete — ${findings.length} findings`);
     }
 
     setAgentStep("Analysis complete", 100);
     setAgentStatus("Analysis complete");
-    addTimeline({ message: "Agent finished successfully", type: "system" });
+    addTimeline({ message: "Analysis finished successfully", type: "system" });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     setAgentStep("Error", 0);
@@ -223,6 +252,6 @@ export async function runAgent(mode: AgentMode) {
     throw err;
   } finally {
     clearInterval(timerInterval);
-    setAgentRunning(false, null);
+    setAgentRunning(false);
   }
 }
