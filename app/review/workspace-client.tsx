@@ -848,8 +848,8 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
           {store.activeView === "files" && (
             fileList.length === 0 ? (
               /* ── Onboarding / Upload Zone ── */
-              <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
-                <div className="max-w-xl w-full">
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="max-w-xl w-full mx-auto pt-4">
                   {/* Step indicator */}
                   <div className="flex items-center justify-center gap-1 mb-10">
                     {[
@@ -1058,6 +1058,8 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                       })}
                     </div>
                   </div>
+                  {/* Bottom spacer */}
+                  <div className="h-8" />
                 </div>
               </div>
             ) : (

@@ -96,31 +96,76 @@ function buildCodebasePrompt(files: Record<string, CodeFile>, config: { focus: s
 
 
 function extractJSON(text: string): unknown[] {
-  // Try direct parse
+  // Pre-clean: strip reasoning/thinking tags (Qwen, DeepSeek, etc.)
+  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+
+  // Strategy 1: Direct parse
   try {
-    const parsed = JSON.parse(text.trim());
+    const parsed = JSON.parse(cleaned);
     if (Array.isArray(parsed)) return parsed;
+    if (typeof parsed === "object" && parsed !== null) return [parsed];
   } catch {}
 
-  // Try to find JSON array in the text
-  const match = text.match(/\[[\s\S]*\]/);
+  // Strategy 2: Extract from markdown code fences first (more specific)
+  const fenced = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) {
+    const inner = fenced[1].trim();
+    try {
+      const parsed = JSON.parse(inner);
+      if (Array.isArray(parsed)) return parsed;
+      if (typeof parsed === "object" && parsed !== null) return [parsed];
+    } catch {}
+    // Try with trailing comma repair
+    const repaired = repairJSON(inner);
+    try {
+      const parsed = JSON.parse(repaired);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {}
+  }
+
+  // Strategy 3: Find JSON array in the text (greedy)
+  const match = cleaned.match(/\[[\s\S]*\]/);
   if (match) {
     try {
       const parsed = JSON.parse(match[0]);
       if (Array.isArray(parsed)) return parsed;
     } catch {}
-  }
-
-  // Try to extract from markdown code blocks
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenced) {
+    // Try with trailing comma repair
+    const repaired = repairJSON(match[0]);
     try {
-      const parsed = JSON.parse(fenced[1].trim());
+      const parsed = JSON.parse(repaired);
       if (Array.isArray(parsed)) return parsed;
     } catch {}
   }
 
+  // Strategy 4: Find individual JSON objects and collect them
+  const objects: unknown[] = [];
+  const objRegex = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g;
+  let objMatch;
+  while ((objMatch = objRegex.exec(cleaned)) !== null) {
+    try {
+      const parsed = JSON.parse(objMatch[0]);
+      if (parsed && typeof parsed === "object" && ("title" in parsed || "severity" in parsed || "explanation" in parsed)) {
+        objects.push(parsed);
+      }
+    } catch {}
+  }
+  if (objects.length > 0) return objects;
+
   return [];
+}
+
+/** Fix common JSON issues from LLMs: trailing commas, single quotes, etc. */
+function repairJSON(text: string): string {
+  let s = text;
+  // Remove trailing commas before ] or }
+  s = s.replace(/,\s*([}\]])/g, "$1");
+  // Replace single quotes with double quotes (crude but helps)
+  // Only if there are no double quotes already (avoids breaking valid JSON)
+  if (!s.includes('"') && s.includes("'")) {
+    s = s.replace(/'/g, '"');
+  }
+  return s;
 }
 
 async function callAI(
@@ -209,6 +254,15 @@ export async function runAgent() {
       // Sub-step 4: Parse findings
       const parsed = extractJSON(result.content);
 
+      if (parsed.length === 0 && result.content.length > 0) {
+        // Model returned content but we couldn't parse it — log for debugging
+        const snippet = result.content.slice(0, 200).replace(/\n/g, " ");
+        addTimeline({
+          message: `Pass ${passNum}: Model returned ${result.usage.completionTokens} tokens but no valid JSON was found. Response starts with: "${snippet}..."`,
+          type: "error",
+        });
+      }
+
       const findings: Finding[] = parsed
         .filter((f): f is Record<string, unknown> => typeof f === "object" && f !== null)
         .map((f) => ({
@@ -241,9 +295,15 @@ export async function runAgent() {
       setAgentStatus(`${passLabel} complete — ${findings.length} findings`);
     }
 
+    const totalFindings = Object.keys(useStore.getState().findings).length;
     setAgentStep("Analysis complete", 100);
-    setAgentStatus("Analysis complete");
-    addTimeline({ message: "Analysis finished successfully", type: "system" });
+    if (totalFindings === 0) {
+      setAgentStatus("Analysis complete — no findings parsed. Try a different model.");
+      addTimeline({ message: "Analysis finished but 0 findings were parsed. The model may not support structured JSON output. Try Qwen3 Coder, Gemma 3, or Gemini.", type: "error" });
+    } else {
+      setAgentStatus(`Analysis complete — ${totalFindings} findings`);
+      addTimeline({ message: "Analysis finished successfully", type: "system" });
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     setAgentStep("Error", 0);
