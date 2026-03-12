@@ -277,6 +277,7 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
   const [showTokenDialog, setShowTokenDialog] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [expandedTimeline, setExpandedTimeline] = useState<Set<string>>(new Set());
 
   // Theme effect — apply class to html element
   useEffect(() => {
@@ -1268,27 +1269,58 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                   </div>
                 ) : (
                   <div className="space-y-1">
-                    {store.timeline.map((entry, i) => (
-                      <motion.div
-                        key={entry.id}
-                        initial={{ opacity: 0, x: -8 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: i * 0.02 }}
-                        className="flex gap-3 items-start py-2.5 border-b border-border/50"
-                      >
-                        <div className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                          entry.type === "approved" ? "bg-emerald" :
-                          entry.type === "rejected" ? "bg-rose/60" :
-                          entry.type === "error" ? "bg-rose" : "bg-azure/60"
-                        }`} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs text-soft">{entry.message}</p>
-                          <p className="text-[10px] text-dim font-mono mt-0.5">
-                            {new Date(entry.timestamp).toLocaleTimeString()}
-                          </p>
-                        </div>
-                      </motion.div>
-                    ))}
+                    {store.timeline.map((entry, i) => {
+                      const isExpanded = expandedTimeline.has(entry.id);
+                      return (
+                        <motion.div
+                          key={entry.id}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: i * 0.02 }}
+                          className="py-2.5 border-b border-border/50"
+                        >
+                          <div className="flex gap-3 items-start">
+                            <div className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                              entry.type === "approved" ? "bg-emerald" :
+                              entry.type === "rejected" ? "bg-rose/60" :
+                              entry.type === "error" ? "bg-rose" : "bg-azure/60"
+                            }`} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-soft">{entry.message}</p>
+                              <p className="text-[10px] text-dim font-mono mt-0.5">
+                                {new Date(entry.timestamp).toLocaleTimeString()}
+                              </p>
+                              {entry.details && (
+                                <button
+                                  onClick={() => setExpandedTimeline(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(entry.id)) next.delete(entry.id);
+                                    else next.add(entry.id);
+                                    return next;
+                                  })}
+                                  className="mt-1 text-[10px] text-azure hover:text-azure/80 flex items-center gap-1 transition-colors"
+                                >
+                                  <ChevronRight className={`w-3 h-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                                  {isExpanded ? "Hide" : "Show"} raw response
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {entry.details && isExpanded && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="mt-2 ml-5"
+                            >
+                              <pre className="text-[10px] font-mono text-dim bg-surface border border-border rounded-lg p-3 overflow-x-auto max-h-80 overflow-y-auto whitespace-pre-wrap break-words">
+                                {entry.details}
+                              </pre>
+                            </motion.div>
+                          )}
+                        </motion.div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

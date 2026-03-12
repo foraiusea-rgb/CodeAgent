@@ -34,6 +34,8 @@ export interface TimelineEntry {
   message: string;
   type: "system" | "approved" | "rejected" | "error";
   timestamp: string;
+  /** Optional expandable detail text (e.g. raw model response) */
+  details?: string;
 }
 
 export interface TokenUsage {

@@ -254,15 +254,6 @@ export async function runAgent() {
       // Sub-step 4: Parse findings
       const parsed = extractJSON(result.content);
 
-      if (parsed.length === 0 && result.content.length > 0) {
-        // Model returned content but we couldn't parse it — log for debugging
-        const snippet = result.content.slice(0, 200).replace(/\n/g, " ");
-        addTimeline({
-          message: `Pass ${passNum}: Model returned ${result.usage.completionTokens} tokens but no valid JSON was found. Response starts with: "${snippet}..."`,
-          type: "error",
-        });
-      }
-
       const findings: Finding[] = parsed
         .filter((f): f is Record<string, unknown> => typeof f === "object" && f !== null)
         .map((f) => ({
@@ -290,6 +281,21 @@ export async function runAgent() {
       setAgentStep("Adding findings...", 90);
       addFindings(findings);
       addTimeline({ message: `Found ${findings.length} issues`, type: "system" });
+
+      // If no findings were produced, log the raw model response so the user can see what came back
+      if (findings.length === 0 && result.content.length > 0) {
+        // Truncate for timeline display but keep enough to be useful
+        const rawPreview = result.content.length > 2000
+          ? result.content.slice(0, 2000) + `\n\n... (${result.content.length.toLocaleString()} chars total, truncated)`
+          : result.content;
+        addTimeline({
+          message: `Pass ${passNum}: Model returned ${result.usage.completionTokens.toLocaleString()} tokens but 0 valid findings could be extracted. Expand to see the raw response.`,
+          type: "error",
+          details: rawPreview,
+        });
+        // Also log full response to browser console for advanced debugging
+        console.warn(`[CodeAgent] Pass ${passNum} raw response (${result.content.length} chars):`, result.content);
+      }
 
       setAgentStep("Pass complete", 100);
       setAgentStatus(`${passLabel} complete — ${findings.length} findings`);
