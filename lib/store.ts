@@ -243,6 +243,7 @@ export const useStore = create<AppState>()(
   clearSession: () => {
     sessionStorage.removeItem("ca_api_key");
     sessionStorage.removeItem("ca_provider");
+    sessionStorage.removeItem("ca_vercel_token");
     set({
       config: {
         apiKey: "",

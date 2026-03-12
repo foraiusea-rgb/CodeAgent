@@ -1,29 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { shouldIncludeFile, langFromPath, MAX_FILES } from "@/lib/import-utils";
 
 export const maxDuration = 30;
-
-// File extensions we want to fetch (code files only)
-const CODE_EXTENSIONS = new Set([
-  "ts", "tsx", "js", "jsx", "mjs", "cjs",
-  "py", "rb", "go", "rs", "java", "kt", "swift",
-  "css", "scss", "less", "html", "vue", "svelte",
-  "json", "yaml", "yml", "toml", "xml",
-  "sh", "bash", "zsh", "fish",
-  "md", "mdx", "txt",
-  "c", "cpp", "h", "hpp", "cs",
-  "php", "lua", "r", "sql",
-  "dockerfile", "makefile", "gitignore",
-]);
-
-// Directories/patterns to skip
-const SKIP_DIRS = new Set([
-  "node_modules", ".git", ".next", "dist", "build", "out",
-  "__pycache__", ".venv", "venv", "vendor", ".cache",
-  "coverage", ".nyc_output", ".turbo",
-]);
-
-const MAX_FILES = 50;
-const MAX_FILE_SIZE = 100000; // 100KB per file
 
 interface GitHubTreeItem {
   path: string;
@@ -35,12 +13,8 @@ interface GitHubTreeItem {
 }
 
 function parseGitHubUrl(url: string): { owner: string; repo: string; branch?: string; path?: string } | null {
-  // Handle various GitHub URL formats
   const cleaned = url.trim().replace(/\/+$/, "").replace(/\.git$/, "");
 
-  // https://github.com/owner/repo
-  // https://github.com/owner/repo/tree/branch
-  // https://github.com/owner/repo/tree/branch/path
   const match = cleaned.match(
     /(?:https?:\/\/)?(?:www\.)?github\.com\/([^/]+)\/([^/]+)(?:\/tree\/([^/]+)(?:\/(.+))?)?/
   );
@@ -52,45 +26,6 @@ function parseGitHubUrl(url: string): { owner: string; repo: string; branch?: st
     branch: match[3] || undefined,
     path: match[4] || undefined,
   };
-}
-
-function shouldIncludeFile(path: string, size?: number): boolean {
-  // Skip large files
-  if (size && size > MAX_FILE_SIZE) return false;
-
-  // Skip hidden files (except common config files)
-  const filename = path.split("/").pop() || "";
-  if (filename.startsWith(".") && !["gitignore", "env.example", "eslintrc.js", "prettierrc"].some(f => filename.includes(f))) {
-    return false;
-  }
-
-  // Skip excluded directories
-  const parts = path.split("/");
-  for (const part of parts) {
-    if (SKIP_DIRS.has(part.toLowerCase())) return false;
-  }
-
-  // Check extension
-  const ext = filename.split(".").pop()?.toLowerCase() || "";
-  const nameLC = filename.toLowerCase();
-
-  // Include extensionless known files
-  if (["dockerfile", "makefile", "rakefile", "gemfile", "procfile"].includes(nameLC)) {
-    return true;
-  }
-
-  return CODE_EXTENSIONS.has(ext);
-}
-
-function langFromPath(path: string): string {
-  const ext = path.split(".").pop()?.toLowerCase() || "";
-  const map: Record<string, string> = {
-    ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript",
-    py: "python", rb: "ruby", go: "go", rs: "rust", java: "java",
-    css: "css", html: "html", json: "json", md: "markdown", sh: "bash",
-    vue: "vue", svelte: "svelte", php: "php", swift: "swift", kt: "kotlin",
-  };
-  return map[ext] || "text";
 }
 
 export async function POST(req: NextRequest) {
@@ -110,7 +45,6 @@ export async function POST(req: NextRequest) {
     }
 
     const { owner, repo, branch } = parsed;
-    // Validate owner/repo to prevent URL injection
     if (!/^[a-zA-Z0-9._-]+$/.test(owner) || !/^[a-zA-Z0-9._-]+$/.test(repo)) {
       return NextResponse.json({ error: "Invalid repository owner or name" }, { status: 400 });
     }
@@ -139,8 +73,7 @@ export async function POST(req: NextRequest) {
       targetBranch = repoData.default_branch || "main";
     }
 
-    // Step 2: Get the full file tree recursively (single API call)
-    // Validate branch name
+    // Step 2: Get the full file tree recursively
     if (!targetBranch || !/^[a-zA-Z0-9._\/-]+$/.test(targetBranch)) {
       return NextResponse.json({ error: "Invalid branch name" }, { status: 400 });
     }
@@ -188,8 +121,6 @@ export async function POST(req: NextRequest) {
           if (data.encoding !== "base64" || !data.content) return null;
 
           const content = Buffer.from(data.content, "base64").toString("utf-8");
-
-          // Skip binary-looking files
           if (content.includes("\0")) return null;
 
           return {

@@ -270,6 +270,10 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
   const [localMessage, setLocalMessage] = useState("");
   const [ghUrl, setGhUrl] = useState("");
   const [ghLoading, setGhLoading] = useState(false);
+  const [importSource, setImportSource] = useState<"github" | "vercel">("github");
+  const [vercelUrl, setVercelUrl] = useState("");
+  const [vercelLoading, setVercelLoading] = useState(false);
+  const [vercelToken, setVercelToken] = useState("");
   const [showTokenDialog, setShowTokenDialog] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
@@ -311,6 +315,10 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
     if (RETIRED_GEMINI[currentModel]) {
       store.setConfig({ model: RETIRED_GEMINI[currentModel] });
     }
+
+    // Load Vercel token from sessionStorage
+    const vToken = sessionStorage.getItem("ca_vercel_token");
+    if (vToken) setVercelToken(vToken);
   }, []);
 
   const showToast = useCallback((msg: string, type: "ok" | "err" = "ok") => {
@@ -373,6 +381,64 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
       setGhLoading(false);
     }
   }, [ghUrl, store, showToast]);
+
+  // Import from Vercel project/deployment
+  const handleVercelImport = useCallback(async () => {
+    if (!vercelUrl.trim() || !vercelToken.trim()) return;
+    setVercelLoading(true);
+    try {
+      const resp = await fetch("/api/vercel-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: vercelUrl.trim(), token: vercelToken.trim() }),
+      });
+      const data = await resp.json();
+
+      // Git-deployment fallback → auto-switch to GitHub import
+      if (data.fallbackGitHub) {
+        showToast(data.reason || "Falling back to GitHub import...", "ok");
+        setGhUrl(data.fallbackGitHub);
+        setImportSource("github");
+        setVercelLoading(false);
+        // Trigger GitHub import with the linked repo URL
+        const ghResp = await fetch("/api/github-import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: data.fallbackGitHub }),
+        });
+        const ghData = await ghResp.json();
+        if (ghData.error) {
+          showToast(ghData.error, "err");
+          return;
+        }
+        store.addFiles(ghData.files);
+        store.setProjectName(ghData.repo.split("/").pop() || "Imported");
+        showToast(`Imported ${ghData.imported}/${ghData.totalFound} files from ${ghData.repo} (via GitHub)`, "ok");
+        setGhUrl("");
+        store.setActiveView("files");
+        return;
+      }
+
+      if (data.error) {
+        showToast(data.error, "err");
+        return;
+      }
+
+      // Persist token on success
+      sessionStorage.setItem("ca_vercel_token", vercelToken);
+
+      store.addFiles(data.files);
+      store.setProjectName(data.project || "Vercel Import");
+      showToast(`Imported ${data.imported}/${data.totalFound} files from ${data.project}`, "ok");
+      setVercelUrl("");
+      store.setActiveView("files");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Vercel import failed", "err");
+    } finally {
+      setVercelLoading(false);
+    }
+  }, [vercelUrl, vercelToken, store, showToast]);
+
   // File drop
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const readers = acceptedFiles.map(
@@ -824,35 +890,102 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                   {/* Divider */}
                   <div className="flex items-center gap-3 my-5">
                     <div className="flex-1 h-px bg-border" />
-                    <span className="text-xs text-dim font-medium">or import from GitHub</span>
+                    <span className="text-xs text-dim font-medium">or import from</span>
                     <div className="flex-1 h-px bg-border" />
                   </div>
 
-                  {/* GitHub import */}
-                  <div className="flex gap-2">
-                    <div className="flex-1 flex items-center gap-2 bg-surface border border-border rounded-xl px-3 py-2.5 focus-within:border-azure/50 transition-colors">
-                      <GitBranch className="w-4 h-4 text-dim flex-shrink-0" />
-                      <input
-                        type="text"
-                        value={ghUrl}
-                        onChange={e => setGhUrl(e.target.value)}
-                        onKeyDown={e => e.key === "Enter" && handleGitHubImport()}
-                        placeholder="github.com/user/repo"
-                        className="flex-1 bg-transparent text-sm font-mono text-text placeholder:text-dim outline-none"
-                      />
-                    </div>
-                    <button
-                      onClick={handleGitHubImport}
-                      disabled={ghLoading || !ghUrl.trim()}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-azure text-white text-sm font-600 hover:bg-azure/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150 min-h-[44px]"
-                    >
-                      {ghLoading ? (
-                        <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Importing...</>
-                      ) : (
-                        <><Download className="w-3.5 h-3.5" /> Import</>
-                      )}
-                    </button>
+                  {/* Import source tabs */}
+                  <div className="flex gap-1.5 mb-3">
+                    {(["github", "vercel"] as const).map(src => (
+                      <button
+                        key={src}
+                        onClick={() => setImportSource(src)}
+                        className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-600 transition-colors ${
+                          importSource === src
+                            ? "bg-azure/15 text-azure border border-azure/25"
+                            : "bg-surface text-dim border border-border hover:border-ghost/30"
+                        }`}
+                      >
+                        {src === "github" ? <GitBranch className="w-3.5 h-3.5" /> : <Globe className="w-3.5 h-3.5" />}
+                        {src === "github" ? "GitHub" : "Vercel"}
+                      </button>
+                    ))}
                   </div>
+
+                  {/* GitHub import */}
+                  {importSource === "github" && (
+                    <div className="flex gap-2">
+                      <div className="flex-1 flex items-center gap-2 bg-surface border border-border rounded-xl px-3 py-2.5 focus-within:border-azure/50 transition-colors">
+                        <GitBranch className="w-4 h-4 text-dim flex-shrink-0" />
+                        <input
+                          type="text"
+                          value={ghUrl}
+                          onChange={e => setGhUrl(e.target.value)}
+                          onKeyDown={e => e.key === "Enter" && handleGitHubImport()}
+                          placeholder="github.com/user/repo"
+                          className="flex-1 bg-transparent text-sm font-mono text-text placeholder:text-dim outline-none"
+                        />
+                      </div>
+                      <button
+                        onClick={handleGitHubImport}
+                        disabled={ghLoading || !ghUrl.trim()}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-azure text-white text-sm font-600 hover:bg-azure/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150 min-h-[44px]"
+                      >
+                        {ghLoading ? (
+                          <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Importing...</>
+                        ) : (
+                          <><Download className="w-3.5 h-3.5" /> Import</>
+                        )}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Vercel import */}
+                  {importSource === "vercel" && (
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <div className="flex-1 flex items-center gap-2 bg-surface border border-border rounded-xl px-3 py-2.5 focus-within:border-azure/50 transition-colors">
+                          <Globe className="w-4 h-4 text-dim flex-shrink-0" />
+                          <input
+                            type="text"
+                            value={vercelUrl}
+                            onChange={e => setVercelUrl(e.target.value)}
+                            onKeyDown={e => e.key === "Enter" && handleVercelImport()}
+                            placeholder="vercel.com/team/project or project.vercel.app"
+                            className="flex-1 bg-transparent text-sm font-mono text-text placeholder:text-dim outline-none"
+                          />
+                        </div>
+                        <button
+                          onClick={handleVercelImport}
+                          disabled={vercelLoading || !vercelUrl.trim() || !vercelToken.trim()}
+                          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-azure text-white text-sm font-600 hover:bg-azure/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150 min-h-[44px]"
+                        >
+                          {vercelLoading ? (
+                            <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Importing...</>
+                          ) : (
+                            <><Download className="w-3.5 h-3.5" /> Import</>
+                          )}
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 bg-surface border border-border rounded-xl px-3 py-2.5 focus-within:border-azure/50 transition-colors">
+                        <ShieldCheck className="w-4 h-4 text-dim flex-shrink-0" />
+                        <input
+                          type="password"
+                          value={vercelToken}
+                          onChange={e => setVercelToken(e.target.value)}
+                          placeholder="Vercel API Token"
+                          className="flex-1 bg-transparent text-sm font-mono text-text placeholder:text-dim outline-none"
+                        />
+                      </div>
+                      <p className="text-[10px] text-dim px-1">
+                        Create a token at{" "}
+                        <a href="https://vercel.com/account/tokens" target="_blank" rel="noopener noreferrer" className="text-azure hover:underline">
+                          vercel.com/account/tokens
+                        </a>
+                        . Stored in this tab only.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Quick tip */}
                   <div className="mt-8 text-center">
@@ -950,25 +1083,62 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                     </div>
                   </div>
 
-                  {/* GitHub Import (compact) */}
-                  <div className="mx-2 mt-2 mb-1">
-                    <div className="flex gap-1">
-                      <input
-                        type="text"
-                        value={ghUrl}
-                        onChange={e => setGhUrl(e.target.value)}
-                        onKeyDown={e => e.key === "Enter" && handleGitHubImport()}
-                        placeholder="github.com/user/repo"
-                        className="flex-1 min-w-0 bg-surface border border-border rounded-md px-2 py-1.5 text-[11px] font-mono text-text placeholder:text-dim outline-none focus:border-azure/50"
-                      />
+                  {/* Import (compact) */}
+                  <div className="mx-2 mt-2 mb-1 space-y-1">
+                    <div className="flex gap-1 mb-1">
                       <button
-                        onClick={handleGitHubImport}
-                        disabled={ghLoading || !ghUrl.trim()}
-                        className="px-2 py-1.5 rounded-md bg-azure/10 border border-azure/20 text-azure text-[10px] font-600 hover:bg-azure/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-                      >
-                        {ghLoading ? "..." : "Import"}
-                      </button>
+                        onClick={() => setImportSource("github")}
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-600 transition-colors ${importSource === "github" ? "bg-azure/15 text-azure" : "text-dim hover:text-ghost"}`}
+                      >GH</button>
+                      <button
+                        onClick={() => setImportSource("vercel")}
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-600 transition-colors ${importSource === "vercel" ? "bg-azure/15 text-azure" : "text-dim hover:text-ghost"}`}
+                      >Vercel</button>
                     </div>
+                    {importSource === "github" ? (
+                      <div className="flex gap-1">
+                        <input
+                          type="text"
+                          value={ghUrl}
+                          onChange={e => setGhUrl(e.target.value)}
+                          onKeyDown={e => e.key === "Enter" && handleGitHubImport()}
+                          placeholder="github.com/user/repo"
+                          className="flex-1 min-w-0 bg-surface border border-border rounded-md px-2 py-1.5 text-[11px] font-mono text-text placeholder:text-dim outline-none focus:border-azure/50"
+                        />
+                        <button
+                          onClick={handleGitHubImport}
+                          disabled={ghLoading || !ghUrl.trim()}
+                          className="px-2 py-1.5 rounded-md bg-azure/10 border border-azure/20 text-azure text-[10px] font-600 hover:bg-azure/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                        >
+                          {ghLoading ? "..." : "Import"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <input
+                          type="text"
+                          value={vercelUrl}
+                          onChange={e => setVercelUrl(e.target.value)}
+                          onKeyDown={e => e.key === "Enter" && handleVercelImport()}
+                          placeholder="vercel.com/team/project"
+                          className="w-full bg-surface border border-border rounded-md px-2 py-1.5 text-[11px] font-mono text-text placeholder:text-dim outline-none focus:border-azure/50"
+                        />
+                        <input
+                          type="password"
+                          value={vercelToken}
+                          onChange={e => setVercelToken(e.target.value)}
+                          placeholder="Vercel token"
+                          className="w-full bg-surface border border-border rounded-md px-2 py-1.5 text-[11px] font-mono text-text placeholder:text-dim outline-none focus:border-azure/50"
+                        />
+                        <button
+                          onClick={handleVercelImport}
+                          disabled={vercelLoading || !vercelUrl.trim() || !vercelToken.trim()}
+                          className="w-full px-2 py-1.5 rounded-md bg-azure/10 border border-azure/20 text-azure text-[10px] font-600 hover:bg-azure/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {vercelLoading ? "..." : "Import from Vercel"}
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* File list */}
@@ -1033,7 +1203,7 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                     <p className="font-display text-base font-600 text-ghost">No findings yet</p>
                     <p className="text-sm text-dim leading-relaxed">
                       {fileList.length === 0
-                        ? "Start by uploading files or importing a GitHub repo from the Files tab."
+                        ? "Start by uploading files or importing from GitHub/Vercel in the Files tab."
                         : `${fileList.length} file(s) loaded. Hit "Analyze" to start.`}
                     </p>
                   </div>
@@ -1322,15 +1492,17 @@ const [localModels, setLocalModels] = useState<LocalModel[]>([]);
                   </div>
                   <div className="p-4 space-y-3">
                     <div className="text-[11px] text-dim space-y-1.5 leading-relaxed">
-                      <p>Your API key is stored in <span className="text-ghost font-600">this browser tab only</span> (sessionStorage). It is never saved to any server, database, or shared with other users.</p>
-                      <p>Closing this tab automatically clears your key. Your uploaded code and review settings persist in localStorage until you clear them.</p>
+                      <p>Your API key and Vercel token are stored in <span className="text-ghost font-600">this browser tab only</span> (sessionStorage). They are never saved to any server, database, or shared with other users.</p>
+                      <p>Closing this tab automatically clears your keys. Your uploaded code and review settings persist in localStorage until you clear them.</p>
                     </div>
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
                           store.setConfig({ apiKey: "" });
                           sessionStorage.removeItem("ca_api_key");
-                          showToast("API keys cleared", "ok");
+                          sessionStorage.removeItem("ca_vercel_token");
+                          setVercelToken("");
+                          showToast("All keys cleared", "ok");
                         }}
                         className="flex items-center gap-1.5 px-3 py-2 text-xs font-600 text-ghost bg-surface border border-border rounded-lg hover:border-azure/50 transition-colors"
                       >
